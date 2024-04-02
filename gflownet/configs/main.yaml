@@ -10,6 +10,7 @@ print_freq: 3
 wandb_freq: null
 eval: false
 eval_freq: 200
+alg_load_path: ''
 
 # for GIN
 arch: gin

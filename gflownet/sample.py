@@ -11,9 +11,9 @@ import torch
 import dgl
 from einops import rearrange, reduce, repeat
 
-from data import get_data_loaders
-from util import seed_torch, TransitionBuffer, get_mdp_class
-from algorithm import DetailedBalanceTransitionBuffer
+from .data import get_data_loaders
+from .util import seed_torch, TransitionBuffer, get_mdp_class
+from .algorithm import DetailedBalanceTransitionBuffer
 
 torch.backends.cudnn.benchmark = True
 
@@ -24,11 +24,11 @@ def get_alg_buffer(cfg, device):
     alg = DetailedBalanceTransitionBuffer(cfg, device)
     return alg, buffer
 
-def get_saved_alg_buffer(cfg, device, alg_load_path):
+def get_saved_alg_buffer(cfg, device):
     assert cfg.alg in ["db", "fl"]
     buffer = TransitionBuffer(cfg.tranbuff_size, cfg)
     alg = DetailedBalanceTransitionBuffer(cfg, device)
-    alg.load(alg_load_path)
+    alg.load(cfg.alg_load_path)
     return alg, buffer
 
 def get_logr_scaler(cfg, process_ratio=1., reward_exp=None):
@@ -143,7 +143,7 @@ def rollout(gbatch, cfg, alg):
     return batch, env.batch_metric(state)
 
 
-@hydra.sample(config_path="configs", config_name="main") # for hydra-core==1.1.0
+@hydra.main(config_path="configs", config_name="main") # for hydra-core==1.1.0
 # @hydra.main(version_base=None, config_path="configs", config_name="main") # for newer hydra
 def sample(cfg: DictConfig):
 
@@ -162,8 +162,10 @@ def sample(cfg: DictConfig):
         
         torch.cuda.empty_cache()
         num_repeat = 1
+        mis_ls, mis_top20_ls = [], []
+        logr_ls = []
         pbar = tqdm(enumerate(test_loader))
-
+        
         trajectories = []
         
         for batch_idx, gbatch in pbar:
@@ -202,7 +204,7 @@ def sample(cfg: DictConfig):
     process_ratio = 1
     reward_exp = None
     logr_scaler = get_logr_scaler(cfg, process_ratio=process_ratio, reward_exp=reward_exp)
-    trajectories = evaluate(logr_scaler)
+    trajectories = evaluate(cfg.epochs, logr_scaler)
     return trajectories
 
 

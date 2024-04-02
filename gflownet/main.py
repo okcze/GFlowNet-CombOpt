@@ -11,9 +11,9 @@ import torch
 import dgl
 from einops import rearrange, reduce, repeat
 
-from data import get_data_loaders
-from util import seed_torch, TransitionBuffer, get_mdp_class
-from algorithm import DetailedBalanceTransitionBuffer
+from .data import get_data_loaders
+from .util import seed_torch, TransitionBuffer, get_mdp_class
+from .algorithm import DetailedBalanceTransitionBuffer
 
 torch.backends.cudnn.benchmark = True
 

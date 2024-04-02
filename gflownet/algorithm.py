@@ -7,8 +7,8 @@ import torch.nn.functional as F
 import dgl
 from einops import rearrange, reduce, repeat
 
-from util import get_decided, pad_batch, get_parent
-from network import GIN
+from .util import get_decided, pad_batch, get_parent
+from .network import GIN
 
 
 def sample_from_logits(pf_logits, gb, state, done, rand_prob=0.):
