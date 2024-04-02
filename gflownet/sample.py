@@ -164,10 +164,8 @@ def sample(cfg: DictConfig):
         num_repeat = 1
         mis_ls, mis_top20_ls = [], []
         logr_ls = []
-        pbar = tqdm(enumerate(test_loader))
-        
-        trajectories = []
-        
+        pbar = tqdm(enumerate(test_loader))        
+                
         for batch_idx, gbatch in pbar:
             gbatch = gbatch.to(device)
             gbatch_rep = dgl.batch([gbatch] * num_repeat)
@@ -176,15 +174,21 @@ def sample(cfg: DictConfig):
             state = env.state
             actions = []
             states = []
-            states.append(state)
+
+            state_per_graph = torch.split(state, env.numnode_per_graph, dim=0)
+            state_per_graph = [state.cpu().numpy() for state in state_per_graph]
+            states.append(state_per_graph)
+
             while not all(env.done):
                 action = alg.sample(gbatch_rep, state, env.done, rand_prob=0.)
-                actions.append(action)
+                actions.append(action.cpu().numpy())
                 state = env.step(action)
-                states.append(state)
+                state_per_graph = torch.split(state, env.numnode_per_graph, dim=0)
+                state_per_graph = [state.cpu().numpy() for state in state_per_graph]
+                states.append(state_per_graph)
 
-            trajectories.append((states, actions))
-
+            np.save(f'/content/states', states)
+            
             logr_rep = logr_scaler(env.get_log_reward())
             logr_ls += logr_rep.tolist()
             curr_mis_rep = torch.tensor(env.batch_metric(state))
@@ -198,14 +202,14 @@ def sample(cfg: DictConfig):
               f"top20={np.mean(mis_top20_ls):.2f}, "
               f"LogR scaled={np.mean(logr_ls):.2e}+-{np.std(logr_ls):.2e}")
 
-        return trajectories
+        return states, actions
 
     ##### sample
     process_ratio = 1
     reward_exp = None
     logr_scaler = get_logr_scaler(cfg, process_ratio=process_ratio, reward_exp=reward_exp)
-    trajectories = evaluate(cfg.epochs, logr_scaler)
-    return trajectories
+    states, actions = evaluate(cfg.epochs, logr_scaler)
+    return states, actions
 
 
 if __name__ == "__main__":
