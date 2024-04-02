@@ -167,6 +167,8 @@ def sample(cfg: DictConfig):
         pbar = tqdm(enumerate(test_loader))        
                 
         for batch_idx, gbatch in pbar:
+            print(dgl.unbatch(gbatch)[0].to_networkx())
+
             gbatch = gbatch.to(device)
             gbatch_rep = dgl.batch([gbatch] * num_repeat)
 
@@ -187,7 +189,14 @@ def sample(cfg: DictConfig):
                 state_per_graph = [state.cpu().numpy() for state in state_per_graph]
                 states.append(state_per_graph)
 
-            np.save(f'/content/states', states)
+            for graph in range(len(state_per_graph)):
+                graph_data = np.array([[]])
+                for i in range(len(states)):
+                    if i==0:
+                        graph_data = np.array([states[i][graph]])
+                    else:
+                        graph_data = np.append(graph_data, np.array([states[i][graph]]), axis=0)
+                np.save(f'/content/states/{graph}', graph_data)
             
             logr_rep = logr_scaler(env.get_log_reward())
             logr_ls += logr_rep.tolist()
