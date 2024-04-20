@@ -49,7 +49,7 @@ rexpit: 1
 
 hydra:
   run:
-    dir: ./outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}
+    dir: ./outputs/default_run/
   sweep:
     dir: ${oc.env:HOME}/scratch/${now:%Y.%m.%d}/${now:%H.%M.%S}
     subdir: ${hydra.job.override_dirname}

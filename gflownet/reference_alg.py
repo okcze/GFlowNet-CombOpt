@@ -14,6 +14,7 @@ from einops import rearrange, reduce, repeat
 from .data import get_data_loaders
 from .util import seed_torch, TransitionBuffer, get_mdp_class
 from .algorithm import DetailedBalanceTransitionBuffer
+from .ref_alg import mis_greedy
 
 torch.backends.cudnn.benchmark = True
 
@@ -127,25 +128,23 @@ def sample(cfg: DictConfig):
                 
         for batch_idx, gbatch in pbar:
 
+            env = get_mdp_class(cfg.task)(gbatch, cfg)
             gbatch = gbatch.to(device)
 
             # Itared over each graph in the batch
-            states = rollout(gbatch, cfg, alg)
-            print("------------------")
-            print(states)
-
-            print(dgl.unbatch(gbatch)[0].to_networkx())
-
-            actions = []
-
-        return states, actions
+            for graph, dgl_g in enumerate(dgl.unbatch(gbatch)):
+                nx_g = dgl_g.to_networkx()
+                mis, node_index_map, snapshots = mis_greedy.greedy_maximum_independent_set_with_snapshots(nx_g)
+                np.save(f'/content/GFlowNet-CombOpt/ref_states/{graph}', snapshots)
+            
+        return
 
     ##### sample
     process_ratio = 1
     reward_exp = None
     logr_scaler = get_logr_scaler(cfg, process_ratio=process_ratio, reward_exp=reward_exp)
-    states, actions = evaluate(cfg.epochs, logr_scaler)
-    return states, actions
+    evaluate(cfg.epochs, logr_scaler)
+    return
 
 
 if __name__ == "__main__":
