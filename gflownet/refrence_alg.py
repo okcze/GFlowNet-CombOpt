@@ -99,48 +99,10 @@ def refine_cfg(cfg):
 
 @torch.no_grad()
 def rollout(gbatch, cfg, alg):
+    # Return state
     env = get_mdp_class(cfg.task)(gbatch, cfg)
     state = env.state
-
-    ##### sample traj
-    reward_exp_eval = None
-    traj_s, traj_r, traj_a, traj_d = [], [], [], []
-    while not all(env.done):
-        action = alg.sample(gbatch, state, env.done, rand_prob=cfg.randp, reward_exp=reward_exp_eval)
-
-        traj_s.append(state)
-        traj_r.append(env.get_log_reward())
-        traj_a.append(action)
-        traj_d.append(env.done)
-        state = env.step(action)
-
-    ##### save last state
-    traj_s.append(state)
-    traj_r.append(env.get_log_reward())
-    traj_d.append(env.done)
-    assert len(traj_s) == len(traj_a) + 1 == len(traj_r) == len(traj_d)
-
-    traj_s = torch.stack(traj_s, dim=1) # (sum of #node per graph in batch, max_traj_len)
-    traj_r = torch.stack(traj_r, dim=1) # (batch_size, max_traj_len)
-    traj_a = torch.stack(traj_a, dim=1) # (batch_size, max_traj_len-1)
-    """
-    traj_a is tensor like 
-    [ 4, 30, 86, 95, 96, 29, -1, -1],
-    [47, 60, 41, 11, 55, 64, 80, -1],
-    [26, 38, 13,  5,  9, -1, -1, -1]
-    """
-    traj_d = torch.stack(traj_d, dim=1) # (batch_size, max_traj_len)
-    """
-    traj_d is tensor like 
-    [False, False, False, False, False, False,  True,  True,  True],
-    [False, False, False, False, False, False, False,  True,  True],
-    [False, False, False, False, False,  True,  True,  True,  True]
-    """
-    traj_len = 1 + torch.sum(~traj_d, dim=1) # (batch_size, )
-
-    ##### graph, state, action, done, reward, trajectory length
-    batch = gbatch.cpu(), traj_s.cpu(), traj_a.cpu(), traj_d.cpu(), traj_r.cpu(), traj_len.cpu()
-    return batch, env.batch_metric(state)
+    return state   
 
 
 @hydra.main(config_path="configs", config_name="main") # for hydra-core==1.1.0
@@ -161,54 +123,20 @@ def sample(cfg: DictConfig):
     def evaluate(ep, logr_scaler):
         
         torch.cuda.empty_cache()
-        num_repeat = 1
-        mis_ls, mis_top20_ls = [], []
-        logr_ls = []
         pbar = tqdm(enumerate(test_loader))        
                 
         for batch_idx, gbatch in pbar:
 
             gbatch = gbatch.to(device)
-            gbatch_rep = dgl.batch([gbatch] * num_repeat)
 
-            env = get_mdp_class(cfg.task)(gbatch_rep, cfg)
-            state = env.state
+            # Itared over each graph in the batch
+            states = rollout(gbatch, cfg, alg)
+            print("------------------")
+            print(states)
+
+            print(dgl.unbatch(gbatch)[0].to_networkx())
+
             actions = []
-            states = []
-
-            state_per_graph = torch.split(state, env.numnode_per_graph, dim=0)
-            state_per_graph = [state.cpu().numpy() for state in state_per_graph]
-            states.append(state_per_graph)
-
-            while not all(env.done):
-                action = alg.sample(gbatch_rep, state, env.done, rand_prob=0.)
-                actions.append(action.cpu().numpy())
-                state = env.step(action)
-                state_per_graph = torch.split(state, env.numnode_per_graph, dim=0)
-                state_per_graph = [state.cpu().numpy() for state in state_per_graph]
-                states.append(state_per_graph)
-
-            for graph in range(len(state_per_graph)):
-                graph_data = np.array([[]])
-                for i in range(len(states)):
-                    if i==0:
-                        graph_data = np.array([states[i][graph]])
-                    else:
-                        graph_data = np.append(graph_data, np.array([states[i][graph]]), axis=0)
-                np.save(f'/content/GFlowNet-CombOpt/states/{graph}', graph_data)
-            
-            logr_rep = logr_scaler(env.get_log_reward())
-            logr_ls += logr_rep.tolist()
-            curr_mis_rep = torch.tensor(env.batch_metric(state))
-            curr_mis_rep = rearrange(curr_mis_rep, "(rep b) -> b rep", rep=num_repeat).float()
-            mis_ls += curr_mis_rep.mean(dim=1).tolist()
-            mis_top20_ls += curr_mis_rep.max(dim=1)[0].tolist()
-            pbar.set_postfix({"Metric": f"{np.mean(mis_ls):.2f}+-{np.std(mis_ls):.2f}"})
-
-        print(f"Test Epoch{ep:2d}: "
-              f"Metric={np.mean(mis_ls):.2f}+-{np.std(mis_ls):.2f}, "
-              f"top20={np.mean(mis_top20_ls):.2f}, "
-              f"LogR scaled={np.mean(logr_ls):.2e}+-{np.std(logr_ls):.2e}")
 
         return states, actions
 
