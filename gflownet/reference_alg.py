@@ -135,7 +135,7 @@ def sample(cfg: DictConfig):
             for graph, dgl_g in enumerate(dgl.unbatch(gbatch)):
                 nx_g = dgl_g.to_networkx()
                 mis, node_index_map, snapshots = mis_greedy.greedy_maximum_independent_set_with_snapshots(nx_g)
-                np.save(f'/content/GFlowNet-CombOpt/ref_states/{graph}', snapshots)
+                np.save(f'/content/GFlowNet-CombOpt/ref_states/{batch_idx}_{graph}', snapshots)
             
         return
 

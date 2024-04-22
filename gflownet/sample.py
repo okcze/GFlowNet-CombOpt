@@ -195,7 +195,7 @@ def sample(cfg: DictConfig):
                         graph_data = np.array([states[i][graph]])
                     else:
                         graph_data = np.append(graph_data, np.array([states[i][graph]]), axis=0)
-                np.save(f'/content/GFlowNet-CombOpt/states/{graph}', graph_data)
+                np.save(f'/content/GFlowNet-CombOpt/states/{batch_idx}_{graph}', graph_data)
             
             logr_rep = logr_scaler(env.get_log_reward())
             logr_ls += logr_rep.tolist()
