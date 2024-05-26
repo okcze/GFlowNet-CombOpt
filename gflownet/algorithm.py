@@ -75,7 +75,12 @@ class DetailedBalance(object):
 
     def train_step(self, *batch):
         raise NotImplementedError
-
+    
+    @torch.no_grad()
+    def compute_logits(self, gb, state, reward_exp=None):
+        """Compute logits for all actions to calculate likelihoods."""
+        self.model.eval()
+        return self.model(gb, state, reward_exp)[..., 0]
 
 class DetailedBalanceTransitionBuffer(DetailedBalance):
     def __init__(self, cfg, device):
