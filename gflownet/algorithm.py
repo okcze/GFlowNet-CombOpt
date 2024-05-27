@@ -77,10 +77,18 @@ class DetailedBalance(object):
         raise NotImplementedError
     
     @torch.no_grad()
-    def compute_logits(self, gb, state, reward_exp=None):
+    def compute_logits(self, gb, state, done, reward_exp=None):
         """Compute logits for all actions to calculate likelihoods."""
         self.model.eval()
-        return self.model(gb, state, reward_exp)[..., 0]
+        pf_logits = self.model(gb, state, reward_exp)[..., 0]
+        numnode_per_graph = gb.batch_num_nodes().tolist()
+        pf_logits[get_decided(state)] = -np.inf
+        pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
+
+        # use -1 to denote impossible action (e.g. for done graphs)
+        # action = torch.full([gb.batch_size,], -1, dtype=torch.long, device=gb.device)
+        pf_undone = pf_logits[~done].softmax(dim=1)
+        return pf_logits, pf_undone
 
 class DetailedBalanceTransitionBuffer(DetailedBalance):
     def __init__(self, cfg, device):

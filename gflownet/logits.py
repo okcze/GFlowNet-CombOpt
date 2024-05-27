@@ -174,20 +174,31 @@ def sample(cfg: DictConfig):
             num_graphs = len(dgl.unbatch(gbatch))
             
             for graph in range(num_graphs):
-                g_states = np.load(f'/content/GFlowNet-CombOpt/{cfg.input_states}/{batch_idx}_{graph}.npy')
-                
-                # Get grpah from gbatch
-                dgl_g = dgl.unbatch(gbatch)[graph]
 
-                logits = []
-                for s in g_states:
-                    state = torch.tensor(s)
+                # Get available states
+                states_input = os.listdir(f'/content/GFlowNet-CombOpt/states')
+                for state_dir in states_input:
                     
-                    g_batch = dgl.batch([dgl_g] * num_repeat)
-                    pf_logits = alg.compute_logits(g_batch, state)
-                    logits.append(pf_logits)
-                
-                np.save(f'/content/GFlowNet-CombOpt/logits/{batch_idx}_{graph}', logits)
+                    if not os.path.exists(f'/content/GFlowNet-CombOpt/logits/{state_dir}'):
+                        os.makedirs(f'/content/GFlowNet-CombOpt/logits/{state_dir}')
+
+                    g_states = np.load(f'/content/GFlowNet-CombOpt/states/{state_dir}/{batch_idx}_{graph}.npy')
+                    
+                    # Get grpah from gbatch
+                    dgl_g = dgl.unbatch(gbatch)[graph]
+
+                    logits = []
+                    for s in g_states:
+                        state = torch.tensor(s).to(device)
+                        
+                        g_batch = dgl.batch([dgl_g] * num_repeat)
+                        
+                        # Done is where state != 2
+                        done = state != 2
+                        pf_logits, pf_undone = alg.compute_logits(g_batch, state, done)
+                        logits.append(pf_undone)
+                    
+                    np.save(f'/content/GFlowNet-CombOpt/logits/{state_dir}/{batch_idx}_{graph}', logits)
 
         return
 

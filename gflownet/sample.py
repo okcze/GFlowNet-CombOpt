@@ -159,6 +159,9 @@ def sample(cfg: DictConfig):
     
     @torch.no_grad()
     def evaluate(ep, logr_scaler):
+
+        if not os.path.exists(f'/content/GFlowNet-CombOpt/states/GFN'):
+            os.makedirs(f'/content/GFlowNet-CombOpt/states/GFN')
         
         torch.cuda.empty_cache()
         num_repeat = 1
@@ -195,7 +198,7 @@ def sample(cfg: DictConfig):
                         graph_data = np.array([states[i][graph]])
                     else:
                         graph_data = np.append(graph_data, np.array([states[i][graph]]), axis=0)
-                np.save(f'/content/GFlowNet-CombOpt/states/{batch_idx}_{graph}', graph_data)
+                np.save(f'/content/GFlowNet-CombOpt/states/GFN/{batch_idx}_{graph}', graph_data)
             
             logr_rep = logr_scaler(env.get_log_reward())
             logr_ls += logr_rep.tolist()

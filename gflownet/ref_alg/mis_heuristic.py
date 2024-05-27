@@ -3,14 +3,15 @@ import torch
 
 class MISHeuristic:
 
-    self.name = "MISHeuristic"
+    def __init__(self) -> None:
+        self.name = "MISHeuristic"
 
-    def min_max_param(V0, k, m):
+    def min_max_param(self, V0, k, m):
         # Select the vertex with the minimum m value and maximum k value
         V0_sorted = sorted(V0, key=lambda v: (m[v], -k[v]))
         return V0_sorted[0]
 
-    def algorithm(nx_graph):
+    def algorithm(self, nx_graph):
         V = list(nx_graph.nodes())
         E = list(nx_graph.edges())
         
@@ -34,7 +35,7 @@ class MISHeuristic:
                 m[v] = complete_subgraph_edges - actual_edges
             
             # Select the vertex with the minimum m value and maximum k value
-            v0 = min_max_param(V0, k, m)
+            v0 = self.min_max_param(V0, k, m)
             
             # Add the selected vertex to the independent set
             S.add(v0)

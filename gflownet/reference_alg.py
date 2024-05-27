@@ -134,12 +134,16 @@ def sample(cfg: DictConfig):
 
             # Itared over each graph in the batch
             for graph, dgl_g in enumerate(dgl.unbatch(gbatch)):
-                nx_g = dgl_g.to_networkx()
+                if torch.cuda.is_available():
+                    nx_g = dgl_g.cpu().to_networkx()
+                else:
+                    nx_g = dgl_g.to_networkx()
                 for ref_alg in [MISHeuristic, MISGreedy]:
+                    alg = ref_alg()
                     # Check if store directory exists
                     if not os.path.exists(f'/content/GFlowNet-CombOpt/states/{ref_alg.__name__}'):
                         os.makedirs(f'/content/GFlowNet-CombOpt/states/{ref_alg.__name__}')
-                    snapshots = ref_alg.algorithm(nx_g)
+                    snapshots = alg.algorithm(nx_g)
                     np.save(f'/content/GFlowNet-CombOpt/states/{ref_alg.__name__}/{batch_idx}_{graph}', snapshots)
             
         return

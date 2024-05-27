@@ -4,9 +4,10 @@ import torch
 
 class MISGreedy:
 
-    self.name = "MISGreedy"
+    def __init__(self) -> None:
+        self.name = "MISGreedy"
 
-    def algorithm(nx_graph):
+    def algorithm(self, nx_graph):
         nodes = list(nx_graph.nodes())
         in_set = [0] * len(nodes)
         node_index_map = {node: index for index, node in enumerate(nodes)}
