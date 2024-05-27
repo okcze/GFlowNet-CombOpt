@@ -59,6 +59,6 @@ class MISHeuristic:
             V0 -= neighbors
 
         # Final snapshot after the last modification
-        snapshots.append(torch.tensor(in_set, dtype=torch.int32))
+        snapshots.append(torch.tensor(in_set, dtype=torch.long))
 
         return snapshots

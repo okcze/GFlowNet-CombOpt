@@ -87,7 +87,7 @@ class DetailedBalance(object):
 
         # use -1 to denote impossible action (e.g. for done graphs)
         # action = torch.full([gb.batch_size,], -1, dtype=torch.long, device=gb.device)
-        pf_undone = pf_logits[~done].softmax(dim=1)
+        pf_undone = pf_logits[~done].softmax(dim=0)
         return pf_logits, pf_undone
 
 class DetailedBalanceTransitionBuffer(DetailedBalance):
