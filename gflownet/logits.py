@@ -194,9 +194,10 @@ def sample(cfg: DictConfig):
                         g_batch = dgl.batch([dgl_g] * num_repeat)
                         
                         # Done is where state != 2
-                        done = state != 2
+                        done = (state != 2).to(device)
+                        done = torch.unsqueeze(done, 0)
                         pf_logits, pf_undone = alg.compute_logits(g_batch, state, done)
-                        logits.append(pf_undone)
+                        logits.append(pf_logits)
                     
                     np.save(f'/content/GFlowNet-CombOpt/logits/{state_dir}/{batch_idx}_{graph}', logits)
 

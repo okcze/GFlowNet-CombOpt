@@ -18,6 +18,9 @@ class MISHeuristic:
         V0 = set(V)
         S = set()
         Est = 0
+
+        in_set = [2] * len(V)  # Initialize with 2 meaning no decision yet
+        node_index_map = {node: index for index, node in enumerate(V)}
         
         # List to store snapshots of the state of the independent set S
         snapshots = []
@@ -39,15 +42,23 @@ class MISHeuristic:
             
             # Add the selected vertex to the independent set
             S.add(v0)
+            in_set[node_index_map[v0]] = 1  # Mark as in the set
             Est += m[v0]
             
-            # Take a snapshot of the current independent set S
-            snapshot = [1 if v in S else 0 for v in V]
-            snapshots.append(torch.tensor(snapshot, dtype=torch.int32))
+            # Mark the neighbors of the selected vertex as not in the set
+            neighbors = set(nx_graph.neighbors(v0))
+            for neighbor in neighbors:
+                if neighbor in V0:  # Only mark those still in V0
+                    in_set[node_index_map[neighbor]] = 0
+
+            # Take a snapshot of the current state of in_set
+            snapshots.append(torch.tensor(in_set, dtype=torch.int32))
             
             # Remove the selected vertex and its neighbors from V0
-            neighbors = set(nx_graph.neighbors(v0))
             V0.remove(v0)
             V0 -= neighbors
+
+        # Final snapshot after the last modification
+        snapshots.append(torch.tensor(in_set, dtype=torch.int32))
 
         return snapshots

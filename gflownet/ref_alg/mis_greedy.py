@@ -9,7 +9,7 @@ class MISGreedy:
 
     def algorithm(self, nx_graph):
         nodes = list(nx_graph.nodes())
-        in_set = [0] * len(nodes)
+        in_set = [2] * len(nodes)
         node_index_map = {node: index for index, node in enumerate(nodes)}
 
         working_graph = nx_graph.copy()
@@ -25,6 +25,9 @@ class MISGreedy:
             in_set[node_index_map[min_degree_node]] = 1
             
             neighbors = list(working_graph.neighbors(min_degree_node))
+            for neighbor in neighbors:
+                neighbor_index = node_index_map[neighbor]
+                in_set[neighbor_index] = 0
             working_graph.remove_node(min_degree_node)
             working_graph.remove_nodes_from(neighbors)
 
