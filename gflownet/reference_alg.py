@@ -14,7 +14,8 @@ from einops import rearrange, reduce, repeat
 from .data import get_data_loaders
 from .util import seed_torch, TransitionBuffer, get_mdp_class
 from .algorithm import DetailedBalanceTransitionBuffer
-from .ref_alg import mis_greedy
+from .ref_alg.mis_greedy import MISGreedy
+from .ref_alg.mis_heuristic import MISHeuristic
 
 torch.backends.cudnn.benchmark = True
 
@@ -134,8 +135,12 @@ def sample(cfg: DictConfig):
             # Itared over each graph in the batch
             for graph, dgl_g in enumerate(dgl.unbatch(gbatch)):
                 nx_g = dgl_g.to_networkx()
-                mis, node_index_map, snapshots = mis_greedy.greedy_maximum_independent_set_with_snapshots(nx_g)
-                np.save(f'/content/GFlowNet-CombOpt/ref_states/{batch_idx}_{graph}', snapshots)
+                for ref_alg in [MISHeuristic, MISGreedy]:
+                    # Check if store directory exists
+                    if not os.path.exists(f'/content/GFlowNet-CombOpt/states/{ref_alg.__name__}'):
+                        os.makedirs(f'/content/GFlowNet-CombOpt/states/{ref_alg.__name__}')
+                    snapshots = ref_alg.algorithm(nx_g)
+                    np.save(f'/content/GFlowNet-CombOpt/states/{ref_alg.__name__}/{batch_idx}_{graph}', snapshots)
             
         return
 

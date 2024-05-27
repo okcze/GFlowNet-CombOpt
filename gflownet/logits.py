@@ -170,8 +170,10 @@ def sample(cfg: DictConfig):
             gbatch_rep = dgl.batch([gbatch] * num_repeat)
 
             env = get_mdp_class(cfg.task)(gbatch_rep, cfg)
+
+            num_graphs = len(dgl.unbatch(gbatch))
             
-            for graph in range(len(gbatch)):
+            for graph in range(num_graphs):
                 g_states = np.load(f'/content/GFlowNet-CombOpt/{cfg.input_states}/{batch_idx}_{graph}.npy')
                 
                 # Get grpah from gbatch
@@ -187,14 +189,14 @@ def sample(cfg: DictConfig):
                 
                 np.save(f'/content/GFlowNet-CombOpt/logits/{batch_idx}_{graph}', logits)
 
-        return states, actions
+        return
 
     ##### sample
     process_ratio = 1
     reward_exp = None
     logr_scaler = get_logr_scaler(cfg, process_ratio=process_ratio, reward_exp=reward_exp)
-    states, actions = evaluate(cfg.epochs, logr_scaler)
-    return states, actions
+    evaluate(cfg.epochs, logr_scaler)
+    return
 
 
 if __name__ == "__main__":
