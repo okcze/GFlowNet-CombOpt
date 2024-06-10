@@ -7,6 +7,23 @@ class MISGreedy:
     def __init__(self) -> None:
         self.name = "MISGreedy"
 
+    @torch.no_grad()
+    def sample(self, gbatch_rep, state, done, rand_prob=0.):
+        actions = []
+        batch_num_graphs = gbatch_rep.batch_size
+        node_offset = 0
+
+        for i in range(batch_num_graphs):
+            subgraph = gbatch_rep.node_subgraph(gbatch_rep.batch_num_nodes == i)
+            nx_g = dgl.to_networkx(subgraph)
+            if nx_g.number_of_nodes() == 0:
+                continue
+            min_degree_node = min(nx_g.nodes, key=nx_g.degree)
+            actions.append(min_degree_node + node_offset)
+            node_offset += subgraph.number_of_nodes()
+        
+        return torch.tensor(actions, dtype=torch.int64)
+
     def algorithm(self, nx_graph):
         nodes = list(nx_graph.nodes())
         in_set = [2] * len(nodes)

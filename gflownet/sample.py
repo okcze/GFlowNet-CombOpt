@@ -15,6 +15,9 @@ from .data import get_data_loaders
 from .util import seed_torch, TransitionBuffer, get_mdp_class
 from .algorithm import DetailedBalanceTransitionBuffer
 
+from .ref_alg.mis_greedy import MISGreedy
+from .ref_alg.mis_heuristic import MISHeuristic
+
 torch.backends.cudnn.benchmark = True
 
 
@@ -150,7 +153,14 @@ def sample(cfg: DictConfig):
     cfg = refine_cfg(cfg)
     device = torch.device(f"cuda:{cfg.device:d}" if torch.cuda.is_available() and cfg.device>=0 else "cpu")
     print(f"Device: {device}")
-    alg, buffer = get_saved_alg_buffer(cfg, device)
+    
+    # Reference algorithms parameter
+    if cfg.alg == "mis_greedy":
+        alg = MISGreedy()
+    elif cfg.alg == "mis_heuristic":
+        alg = MISHeuristic()
+    else:
+        alg, buffer = get_saved_alg_buffer(cfg, device)
     seed_torch(cfg.seed)
     print(str(cfg))
     print(f"Work directory: {os.getcwd()}")

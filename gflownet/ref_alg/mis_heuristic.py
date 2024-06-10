@@ -10,6 +10,40 @@ class MISHeuristic:
         # Select the vertex with the minimum m value and maximum k value
         V0_sorted = sorted(V0, key=lambda v: (m[v], -k[v]))
         return V0_sorted[0]
+    
+    @torch.no_grad()
+    def sample(self, gbatch_rep, state, done, rand_prob=0.):
+        actions = []
+        batch_num_graphs = gbatch_rep.batch_size
+        node_offset = 0
+
+        for i in range(batch_num_graphs):
+            subgraph = gbatch_rep.node_subgraph(gbatch_rep.batch_num_nodes == i)
+            nx_g = dgl.to_networkx(subgraph)
+            if nx_g.number_of_nodes() == 0:
+                continue
+
+            V = list(nx_g.nodes())
+            E = list(nx_g.edges())
+            
+            V0 = set(V)
+            k = {}
+            m = {}
+
+            # Compute k[v] and m[v] for each vertex in V0
+            for v in V0:
+                neighbors = set(nx_g.neighbors(v))
+                k[v] = len(neighbors)
+                complete_subgraph_edges = k[v] * (k[v] - 1) // 2
+                actual_edges = sum(1 for u in neighbors if any(w in neighbors for w in nx_g.neighbors(u)))
+                m[v] = complete_subgraph_edges - actual_edges
+            
+            # Select the vertex with the minimum m value and maximum k value
+            v0 = self.min_max_param(V0, k, m)
+            actions.append(v0 + node_offset)
+            node_offset += subgraph.number_of_nodes()
+        
+        return torch.tensor(actions, dtype=torch.int64)
 
     def algorithm(self, nx_graph):
         V = list(nx_graph.nodes())
