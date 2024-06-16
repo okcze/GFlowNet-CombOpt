@@ -1,5 +1,7 @@
 import networkx as nx
 import torch
+import dgl
+from ..util import get_decided
 
 class MISHeuristic:
 
@@ -13,25 +15,41 @@ class MISHeuristic:
     
     @torch.no_grad()
     def sample(self, gbatch_rep, state, done, rand_prob=0.):
-        actions = []
-        batch_num_graphs = gbatch_rep.batch_size
-        node_offset = 0
+        device = state.device  # Ensure tensors are on the same device
 
-        for i in range(batch_num_graphs):
-            subgraph = gbatch_rep.node_subgraph(gbatch_rep.batch_num_nodes == i)
+        # Initialize actions with -1 to denote impossible actions for done graphs
+        actions = torch.full((gbatch_rep.batch_size,), -1, dtype=torch.long, device=device)
+
+        # Split state into individual graph states
+        batch_num_nodes = gbatch_rep.batch_num_nodes().tolist()
+        graphs_states = torch.split(state, batch_num_nodes, dim=0)
+
+        for i, (graph_state, num_nodes) in enumerate(zip(graphs_states, batch_num_nodes)):
+            # Check if the graph is already done
+            if done[i]:
+                continue
+
+            # Ensure the subgraph is on the same device
+            subgraph_nodes = torch.arange(num_nodes).to(device)
+            subgraph = gbatch_rep.subgraph(subgraph_nodes)
+            subgraph = subgraph.cpu()  # Move subgraph to CPU for NetworkX conversion
             nx_g = dgl.to_networkx(subgraph)
             if nx_g.number_of_nodes() == 0:
                 continue
 
             V = list(nx_g.nodes())
-            E = list(nx_g.edges())
-            
             V0 = set(V)
             k = {}
             m = {}
 
-            # Compute k[v] and m[v] for each vertex in V0
-            for v in V0:
+            # Mask already decided nodes
+            decided_mask = get_decided(graph_state)
+            nodes_to_consider = [n for n in V0 if not decided_mask[n]]
+            if not nodes_to_consider:
+                continue
+
+            # Compute k[v] and m[v] for each vertex in nodes_to_consider
+            for v in nodes_to_consider:
                 neighbors = set(nx_g.neighbors(v))
                 k[v] = len(neighbors)
                 complete_subgraph_edges = k[v] * (k[v] - 1) // 2
@@ -39,11 +57,10 @@ class MISHeuristic:
                 m[v] = complete_subgraph_edges - actual_edges
             
             # Select the vertex with the minimum m value and maximum k value
-            v0 = self.min_max_param(V0, k, m)
-            actions.append(v0 + node_offset)
-            node_offset += subgraph.number_of_nodes()
+            v0 = self.min_max_param(nodes_to_consider, k, m)
+            actions[i] = v0
         
-        return torch.tensor(actions, dtype=torch.int64)
+        return actions
 
     def algorithm(self, nx_graph):
         V = list(nx_graph.nodes())
