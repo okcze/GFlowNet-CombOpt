@@ -159,7 +159,7 @@ def sample(cfg: DictConfig):
         alg, _ = get_saved_alg_buffer(cfg, device)
         alg_name = "GFN"
     else:
-        alg = get_reference_alg(cfg.ref_alg)
+        alg = get_reference_alg(cfg)
         alg_name = alg.name
     
     seed_torch(cfg.seed)

@@ -2,9 +2,6 @@ import os, sys
 from itertools import count
 import random
 import pathlib
-from gflownet.ref_alg.mis_greedy import MISGreedy
-from gflownet.ref_alg.mis_heuristic import MISHeuristic
-from gflownet.ref_alg.mis_local_improvement import MISLocalImprovement
 import ipdb
 import functools
 
@@ -379,6 +376,10 @@ class TransitionBuffer(object):
 ######### Reference Algorithms Utils
 
 def get_reference_alg(cfg):
+    from .ref_alg.mis_greedy import MISGreedy
+    from .ref_alg.mis_heuristic import MISHeuristic
+    from .ref_alg.mis_local_improvement import MISLocalImprovement
+
     if cfg.ref_alg == "mis_greedy":
         return MISGreedy()
     elif cfg.ref_alg == "mis_heuristic":

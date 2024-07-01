@@ -36,39 +36,11 @@ class MISLocalImprovement:
 
             # Mask already decided nodes
             decided_mask = get_decided(graph_state)
-            independent_set = {n for n in nx_g.nodes if decided_mask[n]}
+            nodes_to_consider = [n for n in nx_g.nodes if not decided_mask[n]]
+            if not nodes_to_consider:
+                continue
 
-            improved = True
-            while improved:
-                improved = False
-                # Try to add one independent node
-                for node in nx_g.nodes:
-                    if node not in independent_set and all(neighbor not in independent_set for neighbor in nx_g.neighbors(node)):
-                        independent_set.add(node)
-                        improved = True
-                        break
-
-                # Try to delete one node and add two other independent nodes
-                if not improved:
-                    for node in list(independent_set):
-                        neighbors = set(nx_g.neighbors(node))
-                        potential_adds = [n for n in nx_g.nodes if n not in independent_set and all(neighbor not in independent_set for neighbor in nx_g.neighbors(n))]
-                        if len(potential_adds) >= 2:
-                            for add1 in potential_adds:
-                                for add2 in potential_adds:
-                                    if add1 != add2 and nx_g.has_edge(add1, add2) == False:
-                                        independent_set.remove(node)
-                                        independent_set.add(add1)
-                                        independent_set.add(add2)
-                                        improved = True
-                                        break
-                                if improved:
-                                    break
-                        if improved:
-                            break
+            # Choose random node from nodes_to_consider
+            actions[i] = random.choice(nodes_to_consider)
             
-            # Select a random action from the improved independent set
-            if independent_set:
-                actions[i] = random.choice(list(independent_set))
-        
         return actions
