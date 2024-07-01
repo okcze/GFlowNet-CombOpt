@@ -12,7 +12,7 @@ import dgl
 from einops import rearrange, reduce, repeat
 
 from .data import get_data_loaders
-from .util import seed_torch, TransitionBuffer, get_mdp_class
+from .util import seed_torch, TransitionBuffer, get_mdp_class, get_reference_alg
 from .algorithm import DetailedBalanceTransitionBuffer
 
 from .ref_alg.mis_greedy import MISGreedy
@@ -154,16 +154,14 @@ def sample(cfg: DictConfig):
     device = torch.device(f"cuda:{cfg.device:d}" if torch.cuda.is_available() and cfg.device>=0 else "cpu")
     print(f"Device: {device}")
     
-    # Reference algorithms parameter
-    if cfg.ref_alg == "mis_greedy":
-        alg = MISGreedy()
-        alg_name = cfg.ref_alg
-    elif cfg.ref_alg == "mis_heuristic":
-        alg = MISHeuristic()
-        alg_name = cfg.ref_alg
-    else:
-        alg, buffer = get_saved_alg_buffer(cfg, device)
+    ### Allow usage of reference algorithms
+    if cfg.ref_alg == "":
+        alg, _ = get_saved_alg_buffer(cfg, device)
         alg_name = "GFN"
+    else:
+        alg = get_reference_alg(cfg.ref_alg)
+        alg_name = alg.name
+    
     seed_torch(cfg.seed)
     print(str(cfg))
     print(f"Work directory: {os.getcwd()}")
