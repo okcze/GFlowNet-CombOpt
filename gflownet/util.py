@@ -372,3 +372,19 @@ class TransitionBuffer(object):
 
     def __len__(self):
         return len(self.buffer)
+    
+######### Reference Algorithms Utils
+
+def get_reference_alg(cfg):
+    from .ref_alg.mis_greedy import MISGreedy
+    from .ref_alg.mis_heuristic import MISHeuristic
+    from .ref_alg.mis_local_improvement import MISLocalImprovement
+
+    if cfg.ref_alg == "mis_greedy":
+        return MISGreedy()
+    elif cfg.ref_alg == "mis_heuristic":
+        return MISHeuristic()
+    elif cfg.ref_alg == "mis_local_improvement":
+        return MISLocalImprovement()
+    else:
+        raise NotImplementedError

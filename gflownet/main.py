@@ -25,6 +25,7 @@ def get_alg_buffer(cfg, device):
     return alg, buffer
 
 def get_saved_alg_buffer(cfg, device, alg_load_path):
+    """Allow to load model from file."""
     assert cfg.alg in ["db", "fl"]
     buffer = TransitionBuffer(cfg.tranbuff_size, cfg)
     alg = DetailedBalanceTransitionBuffer(cfg, device)

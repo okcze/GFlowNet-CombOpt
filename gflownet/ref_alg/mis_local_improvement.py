@@ -1,13 +1,14 @@
 import networkx as nx
 import dgl
 import torch
+import random
 
 from ..util import get_decided
 
-class MISGreedy:
+class MISLocalImprovement:
 
     def __init__(self) -> None:
-        self.name = "MISGreedy"
+        self.name = "MISLocalImprovement"
 
     @torch.no_grad()
     def sample(self, gbatch_rep, state, done, rand_prob=0.):
@@ -39,7 +40,7 @@ class MISGreedy:
             if not nodes_to_consider:
                 continue
 
-            min_degree_node = min(nodes_to_consider, key=nx_g.degree)
-            actions[i] = min_degree_node
-        
+            # Choose random node from nodes_to_consider
+            actions[i] = random.choice(nodes_to_consider)
+            
         return actions

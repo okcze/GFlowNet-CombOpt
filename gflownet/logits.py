@@ -197,7 +197,7 @@ def sample(cfg: DictConfig):
                         done = (state != 2).to(device)
                         done = torch.unsqueeze(done, 0)
                         pf_logits, pf_undone = alg.compute_logits(g_batch, state, done)
-                        logits.append(pf_logits)
+                        logits.append(pf_logits.to("cpu"))
                     
                     np.save(f'/content/GFlowNet-CombOpt/logits/{state_dir}/{batch_idx}_{graph}', logits)
 
