@@ -147,7 +147,7 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
     def __init__(self, cfg, device):
         assert cfg.alg in ["db", "fl"]
         self.forward_looking = (cfg.alg == "fl")
-        super(DetailedBalanceTransitionBuffer, self).__init__(cfg, device)
+        super(RegularizedDetailedBalanceTransitionBuffer, self).__init__(cfg, device)
 
     def train_step(self, *batch, reward_exp=None, logr_scaler=None):
         self.model.train()
