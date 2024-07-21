@@ -165,16 +165,19 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
         gb_two = dgl.batch([gb, gb])
         s_two = torch.cat([s, s_next], dim=0)
         logits = self.model(gb_two, s_two, reward_exp)
-        # REF LOGITS FROM REFERENCE ALGORITHM
-        print(logits)
-        print(logits.shape)
-        print("-----------------")
-        # ADD LOGITS FROM REG REF ALG
-        # logits = logits + logits_ref
         _, flows_out = self.model_flow(gb_two, s_two, reward_exp) # (2 * num_graphs, 1)
         flows, flows_next = flows_out[:batch_size, 0], flows_out[batch_size:, 0]
 
         pf_logits = logits[:total_num_nodes, ..., 0]
+        # REF LOGITS FROM REFERENCE ALGORITHM
+        print(logits[0])
+        print(logits[0].shape)
+        print(numnode_per_graph[0])
+        print(s[0].shape)
+        print(s[0])
+        print("-----------------")
+        # ADD LOGITS FROM REG REF ALG
+        # logits = logits + logits_ref
         pf_logits[get_decided(s)] = -np.inf
         pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
         log_pf = F.log_softmax(pf_logits, dim=1)[torch.arange(batch_size), a]
