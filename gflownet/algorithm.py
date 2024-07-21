@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import dgl
 from einops import rearrange, reduce, repeat
 
-from .util import get_decided, pad_batch, get_parent
+from .util import get_decided, pad_batch, get_parent, get_reference_alg
 from .network import GIN
 
 
@@ -147,6 +147,8 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
     def __init__(self, cfg, device):
         assert cfg.alg in ["db", "fl"]
         self.forward_looking = (cfg.alg == "fl")
+        assert len(cfg.ref_alg) > 0
+        self.ref_alg = get_reference_alg(cfg)
         super(RegularizedDetailedBalanceTransitionBuffer, self).__init__(cfg, device)
 
     def train_step(self, *batch, reward_exp=None, logr_scaler=None):
@@ -169,16 +171,16 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
         flows, flows_next = flows_out[:batch_size, 0], flows_out[batch_size:, 0]
 
         pf_logits = logits[:total_num_nodes, ..., 0]
-        # REF LOGITS FROM REFERENCE ALGORITHM
-        print(logits[0])
-        print(logits[0].shape)
-        print(numnode_per_graph[0])
-        print(s[0].shape)
-        print(s[0])
-        print("-----------------")
-        # ADD LOGITS FROM REG REF ALG
-        # logits = logits + logits_ref
         pf_logits[get_decided(s)] = -np.inf
+        
+        # ACTION FROM REFERENCE ALGORITHM
+        ref_action_idx = self.ref_alg.sample(gb, s, get_decided(s))
+        # Weight the logits of the reference action
+        ref_logits = torch.full_like(pf_logits, -float('inf'))
+        ref_logits[ref_action_idx] = 0
+        # Weighted sum of the logits
+        pf_logits = (1-self.cfg.ref_reg_weight) * pf_logits + self.cfg.ref_reg_weight * ref_logits
+        
         pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
         log_pf = F.log_softmax(pf_logits, dim=1)[torch.arange(batch_size), a]
 
