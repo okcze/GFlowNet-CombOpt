@@ -176,7 +176,7 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
         # ACTION FROM REFERENCE ALGORITHM
         ref_action_idx = self.ref_alg.sample(gb, s, get_decided(s))
         # Weight the logits of the reference action
-        ref_logits = torch.full_like(pf_logits, -float('inf'))
+        ref_logits = torch.full_like(pf_logits, -10**6)
         ref_logits[ref_action_idx] = 0
         # Weighted sum of the logits
         pf_logits = (1-self.cfg.ref_reg_weight) * pf_logits + self.cfg.ref_reg_weight * ref_logits
