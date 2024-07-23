@@ -158,6 +158,9 @@ def sample(cfg: DictConfig):
     if cfg.ref_alg == "":
         alg, _ = get_saved_alg_buffer(cfg, device)
         alg_name = "GFN"
+    elif "reg" in cfg.ref_alg:
+        alg, _ = get_saved_alg_buffer(cfg, device)
+        alg_name = cfg.ref_alg
     else:
         alg = get_reference_alg(cfg)
         alg_name = alg.name
