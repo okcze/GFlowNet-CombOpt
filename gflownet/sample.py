@@ -198,7 +198,7 @@ def sample(cfg: DictConfig):
             states.append(state_per_graph)
 
             while not all(env.done):
-                action = alg.sample(gbatch_rep, state, env.done, rand_prob=0.)               
+                action, _ = alg.sample(gbatch_rep, state, env.done, rand_prob=0.)               
                 actions.append(action.cpu().numpy())
                 state = env.step(action)
                 state_per_graph = torch.split(state, env.numnode_per_graph, dim=0)

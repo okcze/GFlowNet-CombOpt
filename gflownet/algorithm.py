@@ -180,24 +180,19 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
         pf_probs = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
         pf_probs = F.softmax(pf_probs, dim=1)
 
-        print(f"GFN actions: {torch.argmax(pf_probs, dim=1)}")  
-        
         # ACTION FROM REFERENCE ALGORITHM
-        ref_actions, ref_action_logits = self.ref_alg.sample(gb, s, d)
+        _, ref_action_logits = self.ref_alg.sample(gb, s, d)
         ref_action_logits[get_decided(s)] = -np.inf
         ref_action_probs = pad_batch(ref_action_logits, numnode_per_graph, padding_value=-np.inf)
         
-        print(f"Reference actions: {ref_actions}")
-        print(f"Reference actions from prob: {torch.argmax(ref_action_probs, dim=1)}")
-
         # Weighted sum of the logits
         # pf_logits = (1-self.cfg.ref_reg_weight) * pf_logits + self.cfg.ref_reg_weight * ref_action_logits
         # pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
+        pf_logits = torch.log(pf_probs + epsilon)
+        ref_action_logits = torch.log(ref_action_probs + epsilon)
+
         pf_logits = (1-self.cfg.ref_reg_weight) * pf_probs + self.cfg.ref_reg_weight * ref_action_probs
-
-        print(f"Weighted actions: {torch.argmax(pf_logits, dim=1)}")
-
-        pf_logits = torch.log(pf_logits + epsilon)
+        
         log_pf = F.log_softmax(pf_logits, dim=1)[torch.arange(batch_size), a]
 
         log_pb = torch.tensor([torch.log(1 / get_parent(s_, self.task).sum())
