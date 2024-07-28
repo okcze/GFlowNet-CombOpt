@@ -171,37 +171,33 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
         flows, flows_next = flows_out[:batch_size, 0], flows_out[batch_size:, 0]
 
         pf_logits = logits[:total_num_nodes, ..., 0]
-        
-        # SCALE LOGITS PER GRAPH TO 10**-6 TO 1
+        pf_logits[get_decided(s)] = -np.inf
+
         # epsilon value to avoid division by zero
         epsilon = 1e-12
 
-        # Reshape logits to (batch_size, num_nodes)
-        pf_logits_split = torch.split(pf_logits, numnode_per_graph, dim=0)
+        # GFN probs
+        pf_probs = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
+        pf_probs = F.softmax(pf_probs, dim=1)
 
-        # Normalize and scale logits for each graph
-        pf_logits_scaled = []
-        for tv in pf_logits_split:
-            tv_min = tv.min()
-            tv_max = tv.max()
-            # Normalize to [0, 1]
-            normalized_tv = (tv - tv_min) / (tv_max - tv_min + epsilon)
-            # Rescale to [10**-6, 1]
-            scaled_tv = normalized_tv * (1 - 10**-6) + 10**-6
-            pf_logits_scaled.append(scaled_tv)
-
-        # Concatenate the scaled logits back to the original shape
-        pf_logits = torch.cat(pf_logits_scaled, dim=0)
-
-        # MOVED -INF ASSIGNMENT TO THE END
-        pf_logits[get_decided(s)] = -np.inf
-
+        print(f"GFN actions: {torch.argmax(pf_probs, dim=1)}")  
+        
         # ACTION FROM REFERENCE ALGORITHM
-        _, ref_action_logits = self.ref_alg.sample(gb, s, d)
+        ref_actions, ref_action_logits = self.ref_alg.sample(gb, s, d)
         ref_action_logits[get_decided(s)] = -np.inf
+        ref_action_probs = pad_batch(ref_action_logits, numnode_per_graph, padding_value=-np.inf)
+        
+        print(f"Reference actions: {ref_actions}")
+        print(f"Reference actions from prob: {torch.argmax(ref_action_probs, dim=1)}")
+
         # Weighted sum of the logits
-        pf_logits = (1-self.cfg.ref_reg_weight) * pf_logits + self.cfg.ref_reg_weight * ref_action_logits
-        pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
+        # pf_logits = (1-self.cfg.ref_reg_weight) * pf_logits + self.cfg.ref_reg_weight * ref_action_logits
+        # pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
+        pf_logits = (1-self.cfg.ref_reg_weight) * pf_probs + self.cfg.ref_reg_weight * ref_action_probs
+
+        print(f"Weighted actions: {torch.argmax(pf_logits, dim=1)}")
+
+        pf_logits = torch.log(pf_logits + epsilon)
         log_pf = F.log_softmax(pf_logits, dim=1)[torch.arange(batch_size), a]
 
         log_pb = torch.tensor([torch.log(1 / get_parent(s_, self.task).sum())
