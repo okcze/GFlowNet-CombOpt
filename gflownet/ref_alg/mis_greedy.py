@@ -22,16 +22,13 @@ class MISGreedy:
 
         # Initialize the combined output tensor
         combined_output_size = sum(batch_num_nodes)
-        combined_output = torch.zeros(combined_output_size, device=device)
+        combined_output = torch.full((combined_output_size,), 10**-6, device=device)
 
         # Calculate cumulative sums of the number of nodes to use as offsets
         cumulative_nodes = [0] + torch.cumsum(torch.tensor(batch_num_nodes), dim=0).tolist()
 
         for i, (graph_state, num_nodes) in enumerate(zip(graphs_states, batch_num_nodes)):
-            # Check if the graph is already done
-            if done[i]:
-                continue
-
+            
             # Ensure the subgraph is on the same device
             subgraph_nodes = torch.arange(num_nodes).to(device)
             subgraph = gbatch_rep.subgraph(subgraph_nodes)
@@ -45,12 +42,17 @@ class MISGreedy:
             nodes_to_consider = [n for n in nx_g.nodes if not decided_mask[n]]
             if not nodes_to_consider:
                 continue
-
+            
             min_degree_node = min(nodes_to_consider, key=nx_g.degree)
-            actions[i] = min_degree_node
-
+            
             # Update the combined output tensor with logits
             offset = cumulative_nodes[i]
             combined_output[offset + min_degree_node] = 1
+
+            # Check if the graph is already done
+            if done[i]:
+                continue
+            else:
+                actions[i] = min_degree_node
         
         return actions, combined_output

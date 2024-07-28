@@ -171,38 +171,36 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
         flows, flows_next = flows_out[:batch_size, 0], flows_out[batch_size:, 0]
 
         pf_logits = logits[:total_num_nodes, ..., 0]
-        pf_logits[get_decided(s)] = -np.inf
-
+        
         # SCALE LOGITS PER GRAPH TO 10**-6 TO 1
-        # reshape logits to (batch_size, num_nodes)
+        # epsilon value to avoid division by zero
+        epsilon = 1e-12
+
+        # Reshape logits to (batch_size, num_nodes)
         pf_logits_split = torch.split(pf_logits, numnode_per_graph, dim=0)
-        # scale to 0 to 1
-        pf_logits_split = [tv - tv.min() for tv in pf_logits_split]
-        pf_logits_split = [tv / tv.max() for tv in pf_logits_split]
-        # scale to 10**-6 to 1
-        pf_logits_scaled = [tv * (1 - 10**-6) + 10**-6 for tv in pf_logits_split]
+
+        # Normalize and scale logits for each graph
+        pf_logits_scaled = []
+        for tv in pf_logits_split:
+            tv_min = tv.min()
+            tv_max = tv.max()
+            # Normalize to [0, 1]
+            normalized_tv = (tv - tv_min) / (tv_max - tv_min + epsilon)
+            # Rescale to [10**-6, 1]
+            scaled_tv = normalized_tv * (1 - 10**-6) + 10**-6
+            pf_logits_scaled.append(scaled_tv)
+
+        # Concatenate the scaled logits back to the original shape
         pf_logits = torch.cat(pf_logits_scaled, dim=0)
 
-        print(f"GFN scaled logits: {pf_logits}")
-        print(f"GFN scaled logits sum: {pf_logits.sum()}")
-        print(pf_logits.shape)
-                
+        # MOVED -INF ASSIGNMENT TO THE END
+        pf_logits[get_decided(s)] = -np.inf
+
         # ACTION FROM REFERENCE ALGORITHM
-        graphs_gfn = torch.split(pf_logits, numnode_per_graph, dim=0)
-        gfn_max = [torch.argmax(tv, dim=0).detach().tolist() for tv in graphs_gfn]
-        print(f"GFN action: {gfn_max}")
-        
-        print(f"Current state: {s}")
-        print(f"Decided: {get_decided(s)}")
-        ref_action_idx, ref_action_logits = self.ref_alg.sample(gb, s, get_decided(s))
-        print(f"REF actions: {ref_action_idx}")
-        # Weight the logits of the reference action
-        print(f"REF logits: {ref_action_logits}")
+        _, ref_action_logits = self.ref_alg.sample(gb, s, d)
+        ref_action_logits[get_decided(s)] = -np.inf
         # Weighted sum of the logits
         pf_logits = (1-self.cfg.ref_reg_weight) * pf_logits + self.cfg.ref_reg_weight * ref_action_logits
-        graphs_states = torch.split(pf_logits, numnode_per_graph, dim=0)
-        max_indices = [torch.argmax(tv, dim=0).detach().numpy().tolist() for tv in graphs_states]
-        print(f"GFN reg: {max_indices}")
         pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
         log_pf = F.log_softmax(pf_logits, dim=1)[torch.arange(batch_size), a]
 
