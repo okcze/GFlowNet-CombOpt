@@ -172,15 +172,37 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
 
         pf_logits = logits[:total_num_nodes, ..., 0]
         pf_logits[get_decided(s)] = -np.inf
-        
+
+        # SCALE LOGITS PER GRAPH TO 10**-6 TO 1
+        # reshape logits to (batch_size, num_nodes)
+        pf_logits_split = torch.split(pf_logits, numnode_per_graph, dim=0)
+        # scale to 0 to 1
+        pf_logits_split = [tv - tv.min() for tv in pf_logits_split]
+        pf_logits_split = [tv / tv.max() for tv in pf_logits_split]
+        # scale to 10**-6 to 1
+        pf_logits_scaled = [tv * (1 - 10**-6) + 10**-6 for tv in pf_logits_split]
+        pf_logits = torch.cat(pf_logits_scaled, dim=0)
+
+        print(f"GFN scaled logits: {pf_logits}")
+        print(f"GFN scaled logits sum: {pf_logits.sum()}")
+        print(pf_logits.shape)
+                
         # ACTION FROM REFERENCE ALGORITHM
-        ref_action_idx = self.ref_alg.sample(gb, s, get_decided(s))
-        # Weight the logits of the reference action
-        ref_logits = torch.full_like(pf_logits, -10**6)
-        ref_logits[ref_action_idx] = 0
-        # Weighted sum of the logits
-        pf_logits = (1-self.cfg.ref_reg_weight) * pf_logits + self.cfg.ref_reg_weight * ref_logits
+        graphs_gfn = torch.split(pf_logits, numnode_per_graph, dim=0)
+        gfn_max = [torch.argmax(tv, dim=0).detach().tolist() for tv in graphs_gfn]
+        print(f"GFN action: {gfn_max}")
         
+        print(f"Current state: {s}")
+        print(f"Decided: {get_decided(s)}")
+        ref_action_idx, ref_action_logits = self.ref_alg.sample(gb, s, get_decided(s))
+        print(f"REF actions: {ref_action_idx}")
+        # Weight the logits of the reference action
+        print(f"REF logits: {ref_action_logits}")
+        # Weighted sum of the logits
+        pf_logits = (1-self.cfg.ref_reg_weight) * pf_logits + self.cfg.ref_reg_weight * ref_action_logits
+        graphs_states = torch.split(pf_logits, numnode_per_graph, dim=0)
+        max_indices = [torch.argmax(tv, dim=0).detach().numpy().tolist() for tv in graphs_states]
+        print(f"GFN reg: {max_indices}")
         pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
         log_pf = F.log_softmax(pf_logits, dim=1)[torch.arange(batch_size), a]
 
