@@ -141,10 +141,10 @@ def sample(cfg: DictConfig):
                 for ref_alg in [MISHeuristic, MISGreedy]:
                     alg = ref_alg()
                     # Check if store directory exists
-                    if not os.path.exists(f'/content/GFlowNet-CombOpt/states/{ref_alg.__name__}'):
-                        os.makedirs(f'/content/GFlowNet-CombOpt/states/{ref_alg.__name__}')
+                    if not os.path.exists(f'/content/GFlowNet-CombOpt/states/0/{ref_alg.__name__}'):
+                        os.makedirs(f'/content/GFlowNet-CombOpt/states/0/{ref_alg.__name__}')
                     snapshots = alg.algorithm(nx_g)
-                    np.save(f'/content/GFlowNet-CombOpt/states/{ref_alg.__name__}/{batch_idx}_{graph}', snapshots)
+                    np.save(f'/content/GFlowNet-CombOpt/states/{ref_alg.__name__}/0/{batch_idx}_{graph}', snapshots)
             
         return
 

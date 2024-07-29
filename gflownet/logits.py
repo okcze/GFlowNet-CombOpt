@@ -182,7 +182,7 @@ def sample(cfg: DictConfig):
                     if not os.path.exists(f'/content/GFlowNet-CombOpt/logits/{state_dir}'):
                         os.makedirs(f'/content/GFlowNet-CombOpt/logits/{state_dir}')
 
-                    g_states = np.load(f'/content/GFlowNet-CombOpt/states/{state_dir}/{batch_idx}_{graph}.npy')
+                    g_states = np.load(f'/content/GFlowNet-CombOpt/states/{state_dir}/0/{batch_idx}_{graph}.npy')
                     
                     # Get grpah from gbatch
                     dgl_g = dgl.unbatch(gbatch)[graph]
