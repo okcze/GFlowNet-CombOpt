@@ -4,6 +4,7 @@ defaults:
 # Reference algorithms
 ref_alg: ""
 ref_reg_weight: 0.5
+regularized: false
 
 task: mis
 input: rb200-300

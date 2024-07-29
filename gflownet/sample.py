@@ -13,7 +13,7 @@ from einops import rearrange, reduce, repeat
 
 from .data import get_data_loaders
 from .util import seed_torch, TransitionBuffer, get_mdp_class, get_reference_alg
-from .algorithm import DetailedBalanceTransitionBuffer
+from .algorithm import DetailedBalanceTransitionBuffer, RegularizedDetailedBalanceTransitionBuffer
 
 from .ref_alg.mis_greedy import MISGreedy
 from .ref_alg.mis_heuristic import MISHeuristic
@@ -24,13 +24,19 @@ torch.backends.cudnn.benchmark = True
 def get_alg_buffer(cfg, device):
     assert cfg.alg in ["db", "fl"]
     buffer = TransitionBuffer(cfg.tranbuff_size, cfg)
-    alg = DetailedBalanceTransitionBuffer(cfg, device)
+    if cfg.regularized:
+        alg = RegularizedDetailedBalanceTransitionBuffer(cfg, device)
+    else:
+        alg = DetailedBalanceTransitionBuffer(cfg, device)
     return alg, buffer
 
 def get_saved_alg_buffer(cfg, device):
     assert cfg.alg in ["db", "fl"]
     buffer = TransitionBuffer(cfg.tranbuff_size, cfg)
-    alg = DetailedBalanceTransitionBuffer(cfg, device)
+    if cfg.regularized:
+        alg = RegularizedDetailedBalanceTransitionBuffer(cfg, device)
+    else:
+        alg = DetailedBalanceTransitionBuffer(cfg, device)
     alg.load(cfg.alg_load_path)
     return alg, buffer
 
@@ -158,9 +164,9 @@ def sample(cfg: DictConfig):
     if cfg.ref_alg == "":
         alg, _ = get_saved_alg_buffer(cfg, device)
         alg_name = "GFN"
-    elif "reg" in cfg.ref_alg:
+    elif cfg.regularized:
         alg, _ = get_saved_alg_buffer(cfg, device)
-        alg_name = cfg.ref_alg
+        alg_name = "reg_" + cfg.ref_alg
     else:
         alg = get_reference_alg(cfg)
         alg_name = alg.name
@@ -168,6 +174,7 @@ def sample(cfg: DictConfig):
     seed_torch(cfg.seed)
     print(str(cfg))
     print(f"Work directory: {os.getcwd()}")
+    print(f"Algorithm: {alg.__class__.__name__}")
 
     _, test_loader = get_data_loaders(cfg)
     
@@ -198,7 +205,14 @@ def sample(cfg: DictConfig):
             states.append(state_per_graph)
 
             while not all(env.done):
-                action, _ = alg.sample(gbatch_rep, state, env.done, rand_prob=0.)               
+                
+                alg_out = alg.sample(gbatch_rep, state, env.done, rand_prob=0.)
+                
+                if len(alg_out) == 2:
+                    action, _ = alg_out
+                else:
+                    action = alg_out
+
                 actions.append(action.cpu().numpy())
                 state = env.step(action)
                 state_per_graph = torch.split(state, env.numnode_per_graph, dim=0)
