@@ -40,6 +40,10 @@ def ema_update(model, ema_model, alpha=0.999):
     for param, ema_param in zip(model.parameters(), ema_model.parameters()):
         ema_param.data.mul_(alpha).add_(param.data, alpha=1 - alpha)
 
+def normalize_tuple(tup):
+    # normalize to 0-1 all tensors in tuple
+    return tuple((tup_i - tup_i.min()) / (tup_i.max() - tup_i.min()) for tup_i in tup)
+
 ######### MDP Utils
 
 def get_decided(state, task="MaxIndependentSet") -> torch.bool:
