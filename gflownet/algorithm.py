@@ -15,12 +15,10 @@ def sample_from_logits(pf_logits, gb, state, done, rand_prob=0.):
     numnode_per_graph = gb.batch_num_nodes().tolist()
     pf_logits[get_decided(state)] = -np.inf
     pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
-
     # use -1 to denote impossible action (e.g. for done graphs)
     action = torch.full([gb.batch_size,], -1, dtype=torch.long, device=gb.device)
     pf_undone = pf_logits[~done].softmax(dim=1)
     action[~done] = torch.multinomial(pf_undone, num_samples=1).squeeze(-1)
-
     if rand_prob > 0.:
         unif_pf_undone = torch.isfinite(pf_logits[~done]).float()
         rand_action_unodone = torch.multinomial(unif_pf_undone, num_samples=1).squeeze(-1)
@@ -152,8 +150,7 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
         super(RegularizedDetailedBalanceTransitionBuffer, self).__init__(cfg, device)
 
     def train_step(self, *batch, reward_exp=None, logr_scaler=None):
-        print('Training')
-
+        
         self.model.train()
         self.model_flow.train()
         torch.cuda.empty_cache()
@@ -170,46 +167,37 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
         s_two = torch.cat([s, s_next], dim=0)
         logits = self.model(gb_two, s_two, reward_exp)
         _, flows_out = self.model_flow(gb_two, s_two, reward_exp) # (2 * num_graphs, 1)
-        flows, flows_next = flows_out[:batch_size, 0], flows_out[batch_size:, 0]
-
-        pf_logits = logits[:total_num_nodes, ..., 0]
-        
-        # Normalize to 0-1
-        pf_logits_splitted = torch.split(pf_logits, numnode_per_graph, dim=0)
-        norm_pf_logits_splitted = normalize_tuple(pf_logits_splitted)
-        pf_logits = torch.cat(norm_pf_logits_splitted, dim=0)
-        print('GFN action')
-        to_print = pad_batch(pf_logits, numnode_per_graph, padding_value=0)
-        print(torch.max(to_print, dim=1))
-
-        # # epsilon value to avoid division by zero
-        # epsilon = 1e-12
-        # pf_logits[get_decided(s)] = 0
-        # GFN probs
-        # pf_probs = pad_batch(pf_logits, numnode_per_graph, padding_value=0)
-        # pf_probs = F.softmax(pf_probs, dim=1)
-        # print('GFN action')
-        # print(torch.max(pf_probs, dim=1))
-
+        flows, flows_next = flows_out[:batch_size, 0], flows_out[batch_size:, 0]      
+                
         # ACTION FROM REFERENCE ALGORITHM
         _, ref_action_logits = self.ref_alg.sample(gb, s, d)
-        ref_action_logits[get_decided(s)] = 0
-        # ref_action_probs = pad_batch(ref_action_logits, numnode_per_graph, padding_value=0)
-        print('Reference action')
-        to_print = pad_batch(ref_action_logits, numnode_per_graph, padding_value=0)
-        print(torch.max(to_print, dim=1))
         
-        # Weighted sum of the logits
-        # pf_logits = (1-self.cfg.ref_reg_weight) * pf_logits + self.cfg.ref_reg_weight * ref_action_logits
-        # pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
-        # pf_logits = torch.log(pf_probs)
-        # ref_action_logits = torch.log(ref_action_probs)
+        ref_action_logits_splitted = torch.split(ref_action_logits, numnode_per_graph, dim=0)
+        pf_logits_splitted = torch.split(pf_logits, numnode_per_graph, dim=0)
+        
+        # Scale and weighted sum
+        pf_logits_splitted, ref_action_logits_splitted = normalize_tuple(pf_logits_splitted, ref_action_logits_splitted)
+        pf_logits = torch.cat(pf_logits_splitted)
+        ref_action_logits = torch.cat(ref_action_logits_splitted)
+
+        # gfn, ref = [], []
+        # for x, y in zip(pf_logits_splitted, ref_action_logits_splitted):
+        #     gfn.append(torch.argmax(x))
+        #     ref.append(torch.argmax(y))
+        
+        # print('GFN action')
+        # print(gfn)
+        # print('Reference action')
+        # print(ref)
 
         pf_logits = (1-self.cfg.ref_reg_weight) * pf_logits + self.cfg.ref_reg_weight * ref_action_logits
+        
+        pf_logits = logits[:total_num_nodes, ..., 0]
         pf_logits[get_decided(s)] = -np.inf
         pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
-        print('Final action')
-        print(torch.max(pf_logits, dim=1))
+        
+        # print('Final action')
+        # print(torch.max(pf_logits, dim=1))
         
         log_pf = F.log_softmax(pf_logits, dim=1)[torch.arange(batch_size), a]
 
@@ -238,46 +226,52 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
     # Overwrite sample method to include reference algorithm
     @torch.no_grad()
     def sample(self, gb, state, done, rand_prob=0., temperature=1., reward_exp=None):
-
-        print('Sampling')
+        
         numnode_per_graph = gb.batch_num_nodes().tolist()
 
+        # GFN ACTION
         self.model.eval()
         pf_logits = self.model(gb, state, reward_exp)[..., 0]
         pf_logits_splitted = torch.split(pf_logits, numnode_per_graph, dim=0)
-        norm_pf_logits_splitted = normalize_tuple(pf_logits_splitted)
-        pf_logits = torch.cat(norm_pf_logits_splitted, dim=0)
-
-        print('GFN action')
-        to_print = pad_batch(pf_logits, numnode_per_graph, padding_value=0)
-        print(torch.max(to_print, dim=1))
-        
+                
         # ACTION FROM REFERENCE ALGORITHM
         _, ref_action_logits = self.ref_alg.sample(gb, state, done)
-        ref_action_logits[get_decided(state)] = 0
-        print('Reference action')
-        to_print = pad_batch(ref_action_logits, numnode_per_graph, padding_value=0)
-        print(torch.max(to_print, dim=1))
+        ref_action_logits_splitted = torch.split(ref_action_logits, numnode_per_graph, dim=0)
+        
+        # Scale and weighted sum
+        pf_logits_splitted, ref_action_logits_splitted = normalize_tuple(pf_logits_splitted, ref_action_logits_splitted)
+        pf_logits = torch.cat(pf_logits_splitted)
+        ref_action_logits = torch.cat(ref_action_logits_splitted)
+
+        # gfn, ref = [], []
+        # for x, y in zip(pf_logits_splitted, ref_action_logits_splitted):
+        #     gfn.append(torch.argmax(x))
+        #     ref.append(torch.argmax(y))
+        
+        # print('GFN action')
+        # print(gfn)
+        # print('Reference action')
+        # print(ref)
 
         # Weighted sum of the logits
-        # pf_logits = (1-self.cfg.ref_reg_weight) * pf_logits + self.cfg.ref_reg_weight * ref_action_logits
+        pf_logits = (1-self.cfg.ref_reg_weight) * pf_logits + self.cfg.ref_reg_weight * ref_action_logits
+        
         pf_logits[get_decided(state)] = -np.inf
         pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
-        print('Final action')
-        print(torch.max(pf_logits, dim=1))
+        
+        # print('Weighted action')
+        # print(torch.max(pf_logits, dim=1))
                 
         return self.sample_from_logits(pf_logits / temperature, gb, state, done, rand_prob=rand_prob)
 
     def sample_from_logits(self, pf_logits, gb, state, done, rand_prob=0.):
         # use -1 to denote impossible action (e.g. for done graphs)
         action = torch.full([gb.batch_size,], -1, dtype=torch.long, device=gb.device)
-        pf_undone = pf_logits[~done].softmax(dim=1) # check here !!!!!!!!!
-        print('PF UNDONE action')
-        print(torch.max(pf_undone, dim=1))
+        pf_undone = pf_logits[~done].softmax(dim=1)
         action[~done] = torch.multinomial(pf_undone, num_samples=1).squeeze(-1)
 
-        print('Sampled action')
-        print(action)
+        # print('Sampled action')
+        # print(action)
 
         if rand_prob > 0.:
             unif_pf_undone = torch.isfinite(pf_logits[~done]).float()

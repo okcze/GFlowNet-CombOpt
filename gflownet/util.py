@@ -40,9 +40,10 @@ def ema_update(model, ema_model, alpha=0.999):
     for param, ema_param in zip(model.parameters(), ema_model.parameters()):
         ema_param.data.mul_(alpha).add_(param.data, alpha=1 - alpha)
 
-def normalize_tuple(tup):
-    # normalize to 0-1 all tensors in tuple
-    return tuple((tup_i - tup_i.min()) / (tup_i.max() - tup_i.min()) for tup_i in tup)
+def normalize_tuple(tup1, tup2):
+    # Rescale reference logits by max from GFN
+    tup2 = tuple(t2 * t1.max() for t1, t2 in zip(tup1, tup2))
+    return tup1, tup2
 
 ######### MDP Utils
 
