@@ -168,7 +168,8 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
         logits = self.model(gb_two, s_two, reward_exp)
         _, flows_out = self.model_flow(gb_two, s_two, reward_exp) # (2 * num_graphs, 1)
         flows, flows_next = flows_out[:batch_size, 0], flows_out[batch_size:, 0]      
-                
+        pf_logits = logits[:total_num_nodes, ..., 0]
+          
         # ACTION FROM REFERENCE ALGORITHM
         _, ref_action_logits = self.ref_alg.sample(gb, s, d)
         
@@ -192,7 +193,6 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
 
         pf_logits = (1-self.cfg.ref_reg_weight) * pf_logits + self.cfg.ref_reg_weight * ref_action_logits
         
-        pf_logits = logits[:total_num_nodes, ..., 0]
         pf_logits[get_decided(s)] = -np.inf
         pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
         
