@@ -41,8 +41,13 @@ def ema_update(model, ema_model, alpha=0.999):
         ema_param.data.mul_(alpha).add_(param.data, alpha=1 - alpha)
 
 def normalize_tuple(tup1, tup2):
-    # Rescale reference logits by max from GFN
-    tup2 = tuple(t2 * t1.max() for t1, t2 in zip(tup1, tup2))
+    # Shift both tuples so that the minimum value in each tensor is 0
+    tup1 = tuple(t1 - t1.min() for t1 in tup1)
+    tup2 = tuple(t2 - t2.min() for t2 in tup2)
+    
+    # Rescale tup2 tensors to match the range of tup1 tensors
+    tup2 = tuple(t2 * (t1.max() / t2.max()) for t1, t2 in zip(tup1, tup2))
+    
     return tup1, tup2
 
 ######### MDP Utils
