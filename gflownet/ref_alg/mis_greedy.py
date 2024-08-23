@@ -1,11 +1,8 @@
-import networkx as nx
-import dgl
 import torch
 
 from ..util import get_decided
 
 class MISGreedy:
-
     def __init__(self) -> None:
         self.name = "MISGreedy"
 
@@ -28,31 +25,28 @@ class MISGreedy:
         cumulative_nodes = [0] + torch.cumsum(torch.tensor(batch_num_nodes), dim=0).tolist()
 
         for i, (graph_state, num_nodes) in enumerate(zip(graphs_states, batch_num_nodes)):
-            
             # Ensure the subgraph is on the same device
             subgraph_nodes = torch.arange(num_nodes).to(device)
             subgraph = gbatch_rep.subgraph(subgraph_nodes)
-            subgraph = subgraph.cpu()  # Move subgraph to CPU for NetworkX conversion
-            nx_g = dgl.to_networkx(subgraph)
-            if nx_g.number_of_nodes() == 0:
-                continue
-
+            
             # Mask already decided nodes
             decided_mask = get_decided(graph_state)
-            nodes_to_consider = [n for n in nx_g.nodes if not decided_mask[n]]
-            if not nodes_to_consider:
-                continue
             
-            min_degree_node = min(nodes_to_consider, key=nx_g.degree)
+            # Get degrees directly from DGL without converting to NetworkX
+            degrees = subgraph.in_degrees() + subgraph.out_degrees()
+            
+            # Set the degrees of decided nodes to a large value (to exclude them)
+            degrees[decided_mask] = torch.iinfo(degrees.dtype).max
+
+            # Get the node with the minimum degree that isn't decided
+            min_degree_node = torch.argmin(degrees).item()
             
             # Update the combined output tensor with logits
             offset = cumulative_nodes[i]
             combined_output[offset + min_degree_node] = 1
 
             # Check if the graph is already done
-            if done[i]:
-                continue
-            else:
+            if not done[i]:
                 actions[i] = min_degree_node
         
         return actions, combined_output
