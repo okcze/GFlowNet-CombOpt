@@ -191,8 +191,11 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
         # print('Reference action')
         # print(ref)
 
-        pf_logits = (1-self.cfg.ref_reg_weight) * pf_logits + self.cfg.ref_reg_weight * ref_action_logits
+        # pf_logits = (1-self.cfg.ref_reg_weight) * pf_logits + self.cfg.ref_reg_weight * ref_action_logits
         
+        # Regularization loss
+        loss_reg = F.mse_loss(pf_logits, ref_action_logits)
+
         pf_logits[get_decided(s)] = -np.inf
         pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
         
@@ -210,6 +213,7 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
             rhs = logr_next + flows_next + log_pb
             loss = (lhs - rhs).pow(2)
             loss = loss.mean()
+            loss += loss_reg
         else:
             flows_next = torch.where(d, logr_next, flows_next)
             lhs = flows + log_pf # (bs,)
@@ -217,66 +221,66 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
             losses = (lhs - rhs).pow(2)
             loss = (losses[d].sum() * self.leaf_coef + losses[~d].sum()) / batch_size
 
-        return_dict = {"train/loss": loss.item()}
+        return_dict = {"train/loss": loss.item(), 'train/REG_LOSS': loss_reg.item()}
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
         return return_dict
     
     # Overwrite sample method to include reference algorithm
-    @torch.no_grad()
-    def sample(self, gb, state, done, rand_prob=0., temperature=1., reward_exp=None):
+    # @torch.no_grad()
+    # def sample(self, gb, state, done, rand_prob=0., temperature=1., reward_exp=None):
         
-        numnode_per_graph = gb.batch_num_nodes().tolist()
+    #     numnode_per_graph = gb.batch_num_nodes().tolist()
 
-        # GFN ACTION
-        self.model.eval()
-        pf_logits = self.model(gb, state, reward_exp)[..., 0]
-        pf_logits_splitted = torch.split(pf_logits, numnode_per_graph, dim=0)
+    #     # GFN ACTION
+    #     self.model.eval()
+    #     pf_logits = self.model(gb, state, reward_exp)[..., 0]
+    #     pf_logits_splitted = torch.split(pf_logits, numnode_per_graph, dim=0)
                 
-        # ACTION FROM REFERENCE ALGORITHM
-        _, ref_action_logits = self.ref_alg.sample(gb, state, done)
-        ref_action_logits_splitted = torch.split(ref_action_logits, numnode_per_graph, dim=0)
+    #     # ACTION FROM REFERENCE ALGORITHM
+    #     _, ref_action_logits = self.ref_alg.sample(gb, state, done)
+    #     ref_action_logits_splitted = torch.split(ref_action_logits, numnode_per_graph, dim=0)
         
-        # Scale and weighted sum
-        pf_logits_splitted, ref_action_logits_splitted = normalize_tuple(pf_logits_splitted, ref_action_logits_splitted)
-        pf_logits = torch.cat(pf_logits_splitted)
-        ref_action_logits = torch.cat(ref_action_logits_splitted)
+    #     # Scale and weighted sum
+    #     pf_logits_splitted, ref_action_logits_splitted = normalize_tuple(pf_logits_splitted, ref_action_logits_splitted)
+    #     pf_logits = torch.cat(pf_logits_splitted)
+    #     ref_action_logits = torch.cat(ref_action_logits_splitted)
 
-        # gfn, ref = [], []
-        # for x, y in zip(pf_logits_splitted, ref_action_logits_splitted):
-        #     gfn.append(torch.argmax(x))
-        #     ref.append(torch.argmax(y))
+    #     # gfn, ref = [], []
+    #     # for x, y in zip(pf_logits_splitted, ref_action_logits_splitted):
+    #     #     gfn.append(torch.argmax(x))
+    #     #     ref.append(torch.argmax(y))
         
-        # print('GFN action')
-        # print(gfn)
-        # print('Reference action')
-        # print(ref)
+    #     # print('GFN action')
+    #     # print(gfn)
+    #     # print('Reference action')
+    #     # print(ref)
 
-        # Weighted sum of the logits
-        pf_logits = (1-self.cfg.ref_reg_weight) * pf_logits + self.cfg.ref_reg_weight * ref_action_logits
+    #     # Weighted sum of the logits
+    #     pf_logits = (1-self.cfg.ref_reg_weight) * pf_logits + self.cfg.ref_reg_weight * ref_action_logits
         
-        pf_logits[get_decided(state)] = -np.inf
-        pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
+    #     pf_logits[get_decided(state)] = -np.inf
+    #     pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
         
-        # print('Weighted action')
-        # print(torch.max(pf_logits, dim=1))
+    #     # print('Weighted action')
+    #     # print(torch.max(pf_logits, dim=1))
                 
-        return self.sample_from_logits(pf_logits / temperature, gb, state, done, rand_prob=rand_prob)
+    #     return self.sample_from_logits(pf_logits / temperature, gb, state, done, rand_prob=rand_prob)
 
-    def sample_from_logits(self, pf_logits, gb, state, done, rand_prob=0.):
-        # use -1 to denote impossible action (e.g. for done graphs)
-        action = torch.full([gb.batch_size,], -1, dtype=torch.long, device=gb.device)
-        pf_undone = pf_logits[~done].softmax(dim=1)
-        action[~done] = torch.multinomial(pf_undone, num_samples=1).squeeze(-1)
+    # def sample_from_logits(self, pf_logits, gb, state, done, rand_prob=0.):
+    #     # use -1 to denote impossible action (e.g. for done graphs)
+    #     action = torch.full([gb.batch_size,], -1, dtype=torch.long, device=gb.device)
+    #     pf_undone = pf_logits[~done].softmax(dim=1)
+    #     action[~done] = torch.multinomial(pf_undone, num_samples=1).squeeze(-1)
 
-        # print('Sampled action')
-        # print(action)
+    #     # print('Sampled action')
+    #     # print(action)
 
-        if rand_prob > 0.:
-            unif_pf_undone = torch.isfinite(pf_logits[~done]).float()
-            rand_action_unodone = torch.multinomial(unif_pf_undone, num_samples=1).squeeze(-1)
-            rand_mask = torch.rand_like(rand_action_unodone.float()) < rand_prob
-            action[~done][rand_mask] = rand_action_unodone[rand_mask]
-        return action
+    #     if rand_prob > 0.:
+    #         unif_pf_undone = torch.isfinite(pf_logits[~done]).float()
+    #         rand_action_unodone = torch.multinomial(unif_pf_undone, num_samples=1).squeeze(-1)
+    #         rand_mask = torch.rand_like(rand_action_unodone.float()) < rand_prob
+    #         action[~done][rand_mask] = rand_action_unodone[rand_mask]
+    #     return action
         
