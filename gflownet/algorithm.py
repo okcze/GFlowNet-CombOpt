@@ -214,7 +214,8 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
             rhs = logr_next + flows_next + log_pb
             loss = (lhs - rhs).pow(2)
             loss = loss.mean()
-            loss += loss_reg
+            loss += self.cfg.ref_reg_weight * loss_reg
+            # print(self.cfg.ref_reg_weight * loss_reg/loss)
         else:
             flows_next = torch.where(d, logr_next, flows_next)
             lhs = flows + log_pf # (bs,)
