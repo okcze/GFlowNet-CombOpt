@@ -243,7 +243,7 @@ def main(cfg: DictConfig):
 
             if train_step % cfg.print_freq == 0:
                 print(f"Epoch {ep:2d} Data used {train_data_used:.3e}: loss={train_info['train/loss']:.2e}, "
-                      + f"REG_LOSS={train_info['train/REG_LOSS']:.2e}, "
+                      + f"reg_loss={train_info['train/reg_loss']:.2e}, "
                       + (f"LogZ={train_info['train/logZ']:.2e}, " if cfg.alg in ["tb", "tbbw"] else "")
                       + f"metric size={np.mean(train_metric_ls):.2f}+-{np.std(train_metric_ls):.2f}, "
                       + f"LogR scaled={train_logr_scaled:.2e} traj_len={train_traj_len:.2f}")
