@@ -166,7 +166,7 @@ def sample(cfg: DictConfig):
         alg_name = "GFN"
     elif cfg.regularized:
         alg, _ = get_saved_alg_buffer(cfg, device)
-        alg_name = "reg_" + cfg.ref_alg
+        alg_name = "reg_" + cfg.alg_load_path.split(".")[0].split("/")[-1]
     else:
         alg = get_reference_alg(cfg)
         alg_name = alg.name

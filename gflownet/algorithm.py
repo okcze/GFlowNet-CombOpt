@@ -194,7 +194,8 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
         # pf_logits = (1-self.cfg.ref_reg_weight) * pf_logits + self.cfg.ref_reg_weight * ref_action_logits
         
         # Regularization loss
-        loss_reg = F.mse_loss(pf_logits, ref_action_logits)
+        pf_logits_clone = pf_logits.clone()
+        loss_reg = F.mse_loss(pf_logits_clone, ref_action_logits)
 
         pf_logits[get_decided(s)] = -np.inf
         pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
@@ -221,7 +222,7 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
             losses = (lhs - rhs).pow(2)
             loss = (losses[d].sum() * self.leaf_coef + losses[~d].sum()) / batch_size
 
-        return_dict = {"train/loss": loss.item(), 'train/REG_LOSS': loss_reg.item()}
+        return_dict = {"train/loss": loss.item(), 'train/reg_loss': loss_reg.item()}
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
