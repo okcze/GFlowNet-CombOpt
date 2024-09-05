@@ -196,6 +196,7 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
         # Regularization loss
         pf_logits_clone = pf_logits.clone()
         loss_reg = F.mse_loss(pf_logits_clone, ref_action_logits)
+        loss_reg = self.cfg.ref_reg_weight * loss_reg
 
         pf_logits[get_decided(s)] = -np.inf
         pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
@@ -214,7 +215,7 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
             rhs = logr_next + flows_next + log_pb
             loss = (lhs - rhs).pow(2)
             loss = loss.mean()
-            loss += self.cfg.ref_reg_weight * loss_reg
+            loss +=  loss_reg
             # print(self.cfg.ref_reg_weight * loss_reg/loss)
         else:
             flows_next = torch.where(d, logr_next, flows_next)

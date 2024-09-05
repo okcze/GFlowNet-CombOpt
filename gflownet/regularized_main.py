@@ -4,6 +4,7 @@ from time import time, sleep
 from tqdm import tqdm
 import hydra
 from omegaconf import DictConfig, open_dict, OmegaConf
+import matplotlib.pyplot as plt
 
 import random
 import numpy as np
@@ -204,6 +205,10 @@ def main(cfg: DictConfig):
         result["train_data_used"][ep] = train_data_used
         pickle.dump(result, gzip.open("./result.json", 'wb'))
 
+    # Store loss to plot
+    total_loss = []
+    reg_loss = []
+
     for ep in range(cfg.epochs):
         for batch_idx, gbatch in enumerate(train_loader):
             reward_exp = None
@@ -247,6 +252,16 @@ def main(cfg: DictConfig):
                       + (f"LogZ={train_info['train/logZ']:.2e}, " if cfg.alg in ["tb", "tbbw"] else "")
                       + f"metric size={np.mean(train_metric_ls):.2f}+-{np.std(train_metric_ls):.2f}, "
                       + f"LogR scaled={train_logr_scaled:.2e} traj_len={train_traj_len:.2f}")
+                # For plotting
+                total_loss.append(train_info['train/loss'])
+                reg_loss.append(train_info['train/reg_loss'])
+            
+            # Plot loss
+            if cfg.plot_loss:
+                plt.plot(total_loss, label='Total Loss')
+                plt.plot(reg_loss, label='Regularization Loss')
+                plt.legend()
+                plt.show()
 
             train_step += 1
 
