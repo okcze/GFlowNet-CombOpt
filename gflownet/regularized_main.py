@@ -256,13 +256,6 @@ def main(cfg: DictConfig):
                 total_loss.append(train_info['train/loss'])
                 reg_loss.append(train_info['train/reg_loss'])
             
-            # Plot loss
-            if cfg.plot_loss:
-                plt.plot(total_loss, label='Total Loss')
-                plt.plot(reg_loss, label='Regularization Loss')
-                plt.legend()
-                plt.show()
-
             train_step += 1
 
             ##### eval
@@ -275,6 +268,13 @@ def main(cfg: DictConfig):
                     alg.save(alg_save_path_best)
                 if cfg.eval:
                     evaluate(ep, train_step, train_data_used, logr_scaler)
+                # Plot loss
+                if cfg.plot_loss and (train_step % cfg.print_freq % 10 == 0):
+                    plt.plot(total_loss, label='Total Loss')
+                    plt.plot(reg_loss, label='Regularization Loss')
+                    plt.legend()
+                    plt.savefig(f"/content/{ep}_{batch_idx}.png")
+                    plt.close() 
 
     evaluate(cfg.epochs, train_step, train_data_used, logr_scaler)
     alg.save(alg_save_path)
