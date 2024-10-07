@@ -158,7 +158,7 @@ def main(cfg: DictConfig):
 
     # Create directory for saving plots
     if cfg.plot_loss and not os.path.exists(f"/content/{cfg.run_name}"):
-        os.makedirs(f"/content/{cfg.run_name}")
+        os.makedirs(f"/content/plots/{cfg.run_name}")
 
     train_loader, test_loader = get_data_loaders(cfg)
     trainset_size = len(train_loader.dataset)
@@ -277,7 +277,7 @@ def main(cfg: DictConfig):
                 plt.plot(total_loss, label='Total Loss')
                 plt.plot(reg_loss, label='Regularization Loss Scaled')
                 plt.legend()
-                plt.savefig(f"/content/{cfg.run_name}/{ep}.png")
+                plt.savefig(f"/content/plots/{cfg.run_name}/{ep}.png")
                 plt.close()
 
     evaluate(cfg.epochs, train_step, train_data_used, logr_scaler)
