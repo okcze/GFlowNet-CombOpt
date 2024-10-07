@@ -9,7 +9,7 @@ ref_alg: ""
 ref_reg_weight: 0.5
 regularized: false
 plot_loss: false
-plot_freq: 200
+plot_freq: 1
 
 task: mis
 input: rb200-300
