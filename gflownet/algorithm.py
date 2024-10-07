@@ -224,7 +224,7 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
             losses = (lhs - rhs).pow(2)
             loss = (losses[d].sum() * self.leaf_coef + losses[~d].sum()) / batch_size
 
-        return_dict = {"train/loss": loss.item(), 'train/reg_loss': loss_reg.item()}
+        return_dict = {"train/loss": loss.item(), 'train/reg_loss_scaled': loss_reg.item()}
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()

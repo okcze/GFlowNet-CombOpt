@@ -1,11 +1,15 @@
 defaults:
   - override hydra/launcher: submitit_slurm
 
+# Output directory
+run_name: default_run
+
 # Reference algorithms
 ref_alg: ""
 ref_reg_weight: 0.5
 regularized: false
 plot_loss: false
+plot_freq: 200
 
 task: mis
 input: rb200-300
@@ -55,7 +59,7 @@ rexpit: 1
 
 hydra:
   run:
-    dir: ./outputs/default_run/
+    dir: ./outputs/${run_name}
   sweep:
     dir: ${oc.env:HOME}/scratch/${now:%Y.%m.%d}/${now:%H.%M.%S}
     subdir: ${hydra.job.override_dirname}
