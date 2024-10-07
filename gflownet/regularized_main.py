@@ -272,13 +272,14 @@ def main(cfg: DictConfig):
                     alg.save(alg_save_path_best)
                 if cfg.eval:
                     evaluate(ep, train_step, train_data_used, logr_scaler)
-            # Plot loss
-            if cfg.plot_loss and (ep % cfg.plot_freq == 0):
-                plt.plot(total_loss, label='Total Loss')
-                plt.plot(reg_loss, label='Regularization Loss Scaled')
-                plt.legend()
-                plt.savefig(f"/content/plots/{cfg.run_name}/{ep}.png")
-                plt.close()
+                    
+        # Plot loss
+        if cfg.plot_loss and (ep % cfg.plot_freq == 0):
+            plt.plot(total_loss, label='Total Loss')
+            plt.plot(reg_loss, label='Regularization Loss Scaled')
+            plt.legend()
+            plt.savefig(f"/content/plots/{cfg.run_name}/{ep}.png")
+            plt.close()
 
     evaluate(cfg.epochs, train_step, train_data_used, logr_scaler)
     alg.save(alg_save_path)
