@@ -252,13 +252,13 @@ def main(cfg: DictConfig):
 
             if train_step % cfg.print_freq == 0:
                 print(f"Epoch {ep:2d} Data used {train_data_used:.3e}: loss={train_info['train/loss']:.2e}, "
-                      + f"reg_loss={train_info['train/reg_loss']:.2e}, "
+                      + f"reg_loss_scaled={train_info['train/reg_loss_scaled']:.2e}, "
                       + (f"LogZ={train_info['train/logZ']:.2e}, " if cfg.alg in ["tb", "tbbw"] else "")
                       + f"metric size={np.mean(train_metric_ls):.2f}+-{np.std(train_metric_ls):.2f}, "
                       + f"LogR scaled={train_logr_scaled:.2e} traj_len={train_traj_len:.2f}")
                 # For plotting
                 total_loss.append(train_info['train/loss'])
-                reg_loss.append(train_info['train/reg_loss'])
+                reg_loss.append(train_info['train/reg_loss_scaled'])
             
             train_step += 1
 
@@ -273,11 +273,11 @@ def main(cfg: DictConfig):
                 if cfg.eval:
                     evaluate(ep, train_step, train_data_used, logr_scaler)
             # Plot loss
-            if cfg.plot_loss and (train_step % cfg.plot_freq == 0):
+            if cfg.plot_loss and (ep % cfg.plot_freq == 0):
                 plt.plot(total_loss, label='Total Loss')
                 plt.plot(reg_loss, label='Regularization Loss Scaled')
                 plt.legend()
-                plt.savefig(f"/content/{cfg.run_name}/{ep}_{batch_idx}.png")
+                plt.savefig(f"/content/{cfg.run_name}/{ep}.png")
                 plt.close()
 
     evaluate(cfg.epochs, train_step, train_data_used, logr_scaler)
