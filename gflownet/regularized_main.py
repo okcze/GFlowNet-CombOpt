@@ -156,6 +156,10 @@ def main(cfg: DictConfig):
     print(str(cfg))
     print(f"Work directory: {os.getcwd()}")
 
+    # Create directory for saving plots
+    if cfg.plot_loss and not os.path.exists(f"/content/{cfg.run_name}"):
+        os.makedirs(f"/content/{cfg.run_name}")
+
     train_loader, test_loader = get_data_loaders(cfg)
     trainset_size = len(train_loader.dataset)
     print(f"Trainset size: {trainset_size}")
@@ -274,7 +278,7 @@ def main(cfg: DictConfig):
                 plt.plot(reg_loss, label='Regularization Loss Scaled')
                 plt.legend()
                 plt.savefig(f"/content/{cfg.run_name}/{ep}_{batch_idx}.png")
-                plt.close() 
+                plt.close()
 
     evaluate(cfg.epochs, train_step, train_data_used, logr_scaler)
     alg.save(alg_save_path)
