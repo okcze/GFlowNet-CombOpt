@@ -210,8 +210,9 @@ def main(cfg: DictConfig):
         pickle.dump(result, gzip.open("./result.json", 'wb'))
 
     # Store loss to plot
-    total_loss = []
+    base_loss = []
     reg_loss = []
+    total_loss = []
 
     for ep in range(cfg.epochs):
         for batch_idx, gbatch in enumerate(train_loader):
@@ -253,12 +254,14 @@ def main(cfg: DictConfig):
             if train_step % cfg.print_freq == 0:
                 print(f"Epoch {ep:2d} Data used {train_data_used:.3e}: loss={train_info['train/loss']:.2e}, "
                       + f"reg_loss_scaled={train_info['train/reg_loss_scaled']:.2e}, "
+                      + f"base_loss={train_info['train/base_loss']:.2e}, "
                       + (f"LogZ={train_info['train/logZ']:.2e}, " if cfg.alg in ["tb", "tbbw"] else "")
                       + f"metric size={np.mean(train_metric_ls):.2f}+-{np.std(train_metric_ls):.2f}, "
                       + f"LogR scaled={train_logr_scaled:.2e} traj_len={train_traj_len:.2f}")
                 # For plotting
-                total_loss.append(train_info['train/loss'])
+                base_loss.append(train_info['train/base_loss'])
                 reg_loss.append(train_info['train/reg_loss_scaled'])
+                total_loss.append(train_info['train/loss'])
             
             train_step += 1
 
@@ -275,8 +278,9 @@ def main(cfg: DictConfig):
                     
         # Plot loss
         if cfg.plot_loss and (ep % cfg.plot_freq == 0):
-            plt.plot(total_loss, label='Total Loss')
+            plt.plot(base_loss, label='Base Loss')
             plt.plot(reg_loss, label='Regularization Loss Scaled')
+            plt.plot(total_loss, label='Total Loss')
             plt.legend()
             plt.savefig(f"/content/plots/{cfg.run_name}/{ep}.png")
             plt.close()
