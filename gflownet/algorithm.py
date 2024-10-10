@@ -147,6 +147,7 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
         self.forward_looking = (cfg.alg == "fl")
         assert len(cfg.ref_alg) > 0
         self.ref_alg = get_reference_alg(cfg)
+        assert (cfg.reg_loss in ["mse", "cross_entropy"])
         super(RegularizedDetailedBalanceTransitionBuffer, self).__init__(cfg, device)
 
     def train_step(self, *batch, reward_exp=None, logr_scaler=None):
@@ -195,7 +196,13 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
         
         # Regularization loss
         pf_logits_clone = pf_logits.clone()
-        loss_reg = F.mse_loss(pf_logits_clone, ref_action_logits)
+        
+        if self.cfg.reg_loss == "cross_entropy":
+            loss_reg = F.cross_entropy(pf_logits_clone, ref_action_logits)
+        elif self.cfg.reg_loss == "mse":
+            loss_reg = F.mse_loss(pf_logits_clone, ref_action_logits)
+        else:
+            raise ValueError('Invalid regularization loss')
         loss_reg = self.cfg.ref_reg_weight * loss_reg
 
         pf_logits[get_decided(s)] = -np.inf
