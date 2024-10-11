@@ -213,6 +213,7 @@ def main(cfg: DictConfig):
     base_loss = []
     reg_loss = []
     total_loss = []
+    reg_ratio = []
 
     for ep in range(cfg.epochs):
         for batch_idx, gbatch in enumerate(train_loader):
@@ -255,13 +256,15 @@ def main(cfg: DictConfig):
                 print(f"Epoch {ep:2d} Data used {train_data_used:.3e}: loss={train_info['train/loss']:.2e}, "
                       + f"reg_loss_scaled={train_info['train/reg_loss_scaled']:.2e}, "
                       + f"base_loss={train_info['train/base_loss']:.2e}, "
-                      + (f"LogZ={train_info['train/logZ']:.2e}, " if cfg.alg in ["tb", "tbbw"] else "")
-                      + f"metric size={np.mean(train_metric_ls):.2f}+-{np.std(train_metric_ls):.2f}, "
+                      + f"reg_ratio={train_info['train/reg_ratio']:.2e}, "
+                    #   + (f"LogZ={train_info['train/logZ']:.2e}, " if cfg.alg in ["tb", "tbbw"] else "")
+                    #   + f"metric size={np.mean(train_metric_ls):.2f}+-{np.std(train_metric_ls):.2f}, "
                       + f"LogR scaled={train_logr_scaled:.2e} traj_len={train_traj_len:.2f}")
                 # For plotting
                 base_loss.append(train_info['train/base_loss'])
                 reg_loss.append(train_info['train/reg_loss_scaled'])
                 total_loss.append(train_info['train/loss'])
+                reg_ratio.append(train_info['train/reg_ratio'])
             
             train_step += 1
 
@@ -283,6 +286,11 @@ def main(cfg: DictConfig):
             plt.plot(total_loss, label='Total Loss')
             plt.legend()
             plt.savefig(f"/content/plots/{cfg.run_name}/{ep}.png")
+            plt.close()
+            # Reg ratio plot
+            plt.plot(reg_ratio, label='Regularization Ratio')
+            plt.legend()
+            plt.savefig(f"/content/plots/{cfg.run_name}/{ep}_reg_ratio.png")
             plt.close()
 
     evaluate(cfg.epochs, train_step, train_data_used, logr_scaler)

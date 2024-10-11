@@ -182,10 +182,13 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
         pf_logits = torch.cat(pf_logits_splitted)
         ref_action_logits = torch.cat(ref_action_logits_splitted)
 
-        # gfn, ref = [], []
-        # for x, y in zip(pf_logits_splitted, ref_action_logits_splitted):
-        #     gfn.append(torch.argmax(x))
-        #     ref.append(torch.argmax(y))
+        gfn, ref = [], []
+        for x, y in zip(pf_logits_splitted, ref_action_logits_splitted):
+            gfn.append(torch.argmax(x))
+            ref.append(torch.argmax(y))
+        
+        # Check if actions overlap
+        reg_ratio = sum([1 for x, y in zip(gfn, ref) if x == y]) / len(gfn)
         
         # print('GFN action')
         # print(gfn)
@@ -232,7 +235,7 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
             losses = (lhs - rhs).pow(2)
             loss = (losses[d].sum() * self.leaf_coef + losses[~d].sum()) / batch_size
 
-        return_dict = {"train/loss": loss.item(), 'train/reg_loss_scaled': loss_reg.item(), 'train/base_loss': loss_base}
+        return_dict = {"train/loss": loss.item(), 'train/reg_loss_scaled': loss_reg.item(), 'train/base_loss': loss_base, 'train/reg_ratio': reg_ratio}
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
