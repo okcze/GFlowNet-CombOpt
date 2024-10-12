@@ -124,8 +124,8 @@ def refine_cfg(cfg):
 
 @torch.no_grad()
 def rollout(gbatch, cfg, alg, ref_alg, frac_replaced):
-    num_replaced = int(frac_replaced * cfg.batch_size)
     env = get_mdp_class(cfg.task)(gbatch, cfg)
+    num_replaced = int(frac_replaced * len(env.done))
     state = env.state
 
     ##### Select N trajectories for replacement
@@ -142,7 +142,7 @@ def rollout(gbatch, cfg, alg, ref_alg, frac_replaced):
         # Sample actions for the whole batch using both algorithms
         actions_alg = alg.sample(gbatch, state, env.done, rand_prob=cfg.randp)
         actions_preferred, _ = ref_alg.sample(gbatch, state, env.done, rand_prob=cfg.randp)
-
+        
         # Initialize the action tensor for this step
         action = torch.empty_like(env.done, dtype=actions_alg.dtype)
         
