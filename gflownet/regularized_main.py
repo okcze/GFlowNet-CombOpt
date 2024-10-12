@@ -100,35 +100,32 @@ def refine_cfg(cfg):
     return cfg
 
 @torch.no_grad()
-def rollout_regularized(gbatch, cfg, alg, ref_alg, frac_replaced):
-    num_replaced = int(frac_replaced * cfg.bs)
-
-    batch_default, metrics_default = rollout(gbatch, cfg, alg)
-    batch_preferred, metrics_preferred = rollout(gbatch, cfg, ref_alg)
-
-    batch_size = cfg.bs
-    replace_indices = torch.randperm(batch_size)[:num_replaced]
-
-    for idx in replace_indices:
-        for i in range(1, len(batch_default)):
-            batch_default[i][idx, :] = batch_preferred[i][idx, :]
-
-        batch_default[4][idx, :] = batch_default[4][idx, :] * cfg.reward_boost
-        metrics_default[idx] = metrics_preferred[idx]
-
-    return batch_default, metrics_default
-
-@torch.no_grad()
-def rollout(gbatch, cfg, alg):
+def rollout(gbatch, cfg, alg, ref_alg, frac_replaced):
+    num_replaced = int(frac_replaced * cfg.batch_size)
     env = get_mdp_class(cfg.task)(gbatch, cfg)
     state = env.state
 
-    ##### sample traj
-    reward_exp_eval = None
-    traj_s, traj_r, traj_a, traj_d = [], [], [], []
-    while not all(env.done):
-        action = alg.sample(gbatch, state, env.done, rand_prob=cfg.randp, reward_exp=reward_exp_eval)
+    ##### Select N trajectories for replacement
+    batch_size = len(env.done)
+    replace_indices = torch.randperm(batch_size)[:num_replaced]
+    replace_flags = torch.zeros(batch_size, dtype=torch.bool)
+    replace_flags[replace_indices] = True
 
+    ##### Initialize trajectory storage
+    traj_s, traj_r, traj_a, traj_d = [], [], [], []
+
+    ##### Sample trajectories
+    while not all(env.done):
+        # Sample actions for the whole batch using both algorithms
+        actions_alg = alg.sample(gbatch, state, env.done, rand_prob=cfg.randp)
+        actions_preferred, _ = ref_alg.sample(gbatch, state, env.done, rand_prob=cfg.randp)
+
+        # Initialize the action tensor for this step
+        action = torch.empty_like(env.done, dtype=actions_alg.dtype)
+        
+        # Use actions from `ref_alg` for the trajectories marked for replacement, else use `alg`
+        action[replace_flags] = actions_preferred[replace_flags]
+        action[~replace_flags] = actions_alg[~replace_flags] 
         traj_s.append(state)
         traj_r.append(env.get_log_reward())
         traj_a.append(action)
@@ -176,7 +173,7 @@ def main(cfg: DictConfig):
     print(f"Work directory: {os.getcwd()}")
 
     # Create directory for saving plots
-    if cfg.plot_loss and not os.path.exists(f"/content/{cfg.run_name}"):
+    if cfg.plot_loss and not os.path.exists(f"/content/plots/{cfg.run_name}"):
         os.makedirs(f"/content/plots/{cfg.run_name}")
     elif cfg.plot_loss and os.path.exists(f"/content/{cfg.run_name}"):
         import shutil
@@ -251,7 +248,7 @@ def main(cfg: DictConfig):
             train_data_used += gbatch.batch_size
 
             ###### rollout
-            batch, metric_ls = rollout_regularized(gbatch, cfg, alg, alg.ref_alg, cfg.frac_replaced)
+            batch, metric_ls = rollout(gbatch, cfg, alg, alg.ref_alg, cfg.frac_replaced)
             buffer.add_batch(batch)
 
             logr = logr_scaler(batch[-2][:, -1])
