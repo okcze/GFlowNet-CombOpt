@@ -7,7 +7,7 @@ class MISGreedy:
         self.name = "MISGreedy"
 
     @torch.no_grad()
-    def sample(self, gbatch_rep, state, done, rand_prob=0.):
+    def sample(self, gbatch_rep, state, done, rand_prob=0., reward_exp=1.0):
         device = state.device  # Ensure tensors are on the same device
 
         # Initialize actions with -1 to denote impossible actions for done graphs

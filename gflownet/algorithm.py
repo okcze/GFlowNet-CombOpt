@@ -188,7 +188,7 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
             ref.append(torch.argmax(y))
         
         # Check if actions overlap
-        reg_ratio = sum([1 for x, y in zip(gfn, ref) if x == y]) / len(gfn)
+        reg_ratio = sum([1 if x == y else 0 for x, y in zip(gfn, ref)])/len(gfn)
         
         # print('GFN action')
         # print(gfn)
@@ -198,15 +198,15 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
         # pf_logits = (1-self.cfg.ref_reg_weight) * pf_logits + self.cfg.ref_reg_weight * ref_action_logits
         
         # Regularization loss
-        pf_logits_clone = pf_logits.clone()
+        # pf_logits_clone = pf_logits.clone()
         
-        if self.cfg.reg_loss == "cross_entropy":
-            loss_reg = F.cross_entropy(pf_logits_clone, ref_action_logits)
-        elif self.cfg.reg_loss == "mse":
-            loss_reg = F.mse_loss(pf_logits_clone, ref_action_logits)
-        else:
-            raise ValueError('Invalid regularization loss')
-        loss_reg = self.cfg.ref_reg_weight * loss_reg
+        # if self.cfg.reg_loss == "cross_entropy":
+        #     loss_reg = F.cross_entropy(pf_logits_clone, ref_action_logits)
+        # elif self.cfg.reg_loss == "mse":
+        #     loss_reg = F.mse_loss(pf_logits_clone, ref_action_logits)
+        # else:
+        #     raise ValueError('Invalid regularization loss')
+        # loss_reg = self.cfg.ref_reg_weight * loss_reg
 
         pf_logits[get_decided(s)] = -np.inf
         pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
@@ -226,7 +226,7 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
             loss = (lhs - rhs).pow(2)
             loss = loss.mean()
             loss_base = loss.item()
-            loss +=  loss_reg
+            # loss +=  loss_reg
             # print(self.cfg.ref_reg_weight * loss_reg/loss)
         else:
             flows_next = torch.where(d, logr_next, flows_next)
@@ -235,7 +235,8 @@ class RegularizedDetailedBalanceTransitionBuffer(DetailedBalance):
             losses = (lhs - rhs).pow(2)
             loss = (losses[d].sum() * self.leaf_coef + losses[~d].sum()) / batch_size
 
-        return_dict = {"train/loss": loss.item(), 'train/reg_loss_scaled': loss_reg.item(), 'train/base_loss': loss_base, 'train/reg_ratio': reg_ratio}
+        # return_dict = {"train/loss": loss.item(), 'train/reg_loss_scaled': loss_reg.item(), 'train/base_loss': loss_base, 'train/reg_ratio': reg_ratio}
+        return_dict = {"train/loss": loss.item(), 'train/reg_ratio': reg_ratio}
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()

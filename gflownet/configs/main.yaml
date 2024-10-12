@@ -6,8 +6,10 @@ run_name: default_run
 
 # Reference algorithms
 ref_alg: ""
-ref_reg_weight: 0.5
-reg_loss: "cross_entropy"
+# ref_reg_weight: 0.5
+frac_replaced: 0.25
+reward_boost: 1.5
+# reg_loss: "cross_entropy"
 regularized: false
 plot_loss: false
 plot_freq: 1

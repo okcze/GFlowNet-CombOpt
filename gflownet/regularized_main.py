@@ -100,6 +100,25 @@ def refine_cfg(cfg):
     return cfg
 
 @torch.no_grad()
+def rollout_regularized(gbatch, cfg, alg, ref_alg, frac_replaced):
+    num_replaced = int(frac_replaced * cfg.bs)
+
+    batch_default, metrics_default = rollout(gbatch, cfg, alg)
+    batch_preferred, metrics_preferred = rollout(gbatch, cfg, ref_alg)
+
+    batch_size = cfg.bs
+    replace_indices = torch.randperm(batch_size)[:num_replaced]
+
+    for idx in replace_indices:
+        for i in range(1, len(batch_default)):
+            batch_default[i][idx, :] = batch_preferred[i][idx, :]
+
+        batch_default[4][idx, :] = batch_default[4][idx, :] * cfg.reward_boost
+        metrics_default[idx] = metrics_preferred[idx]
+
+    return batch_default, metrics_default
+
+@torch.no_grad()
 def rollout(gbatch, cfg, alg):
     env = get_mdp_class(cfg.task)(gbatch, cfg)
     state = env.state
@@ -159,6 +178,9 @@ def main(cfg: DictConfig):
     # Create directory for saving plots
     if cfg.plot_loss and not os.path.exists(f"/content/{cfg.run_name}"):
         os.makedirs(f"/content/plots/{cfg.run_name}")
+    elif cfg.plot_loss and os.path.exists(f"/content/{cfg.run_name}"):
+        import shutil
+        shutil.rmtree(f"/content/plots/{cfg.run_name}")
 
     train_loader, test_loader = get_data_loaders(cfg)
     trainset_size = len(train_loader.dataset)
@@ -210,9 +232,9 @@ def main(cfg: DictConfig):
         pickle.dump(result, gzip.open("./result.json", 'wb'))
 
     # Store loss to plot
-    base_loss = []
-    reg_loss = []
-    total_loss = []
+    # base_loss = []
+    # reg_loss = []
+    # total_loss = []
     reg_ratio = []
 
     for ep in range(cfg.epochs):
@@ -229,7 +251,7 @@ def main(cfg: DictConfig):
             train_data_used += gbatch.batch_size
 
             ###### rollout
-            batch, metric_ls = rollout(gbatch, cfg, alg)
+            batch, metric_ls = rollout_regularized(gbatch, cfg, alg, alg.ref_alg, cfg.frac_replaced)
             buffer.add_batch(batch)
 
             logr = logr_scaler(batch[-2][:, -1])
@@ -254,16 +276,16 @@ def main(cfg: DictConfig):
 
             if train_step % cfg.print_freq == 0:
                 print(f"Epoch {ep:2d} Data used {train_data_used:.3e}: loss={train_info['train/loss']:.2e}, "
-                      + f"reg_loss_scaled={train_info['train/reg_loss_scaled']:.2e}, "
-                      + f"base_loss={train_info['train/base_loss']:.2e}, "
+                    #   + f"reg_loss_scaled={train_info['train/reg_loss_scaled']:.2e}, "
+                    #   + f"base_loss={train_info['train/base_loss']:.2e}, "
                       + f"reg_ratio={train_info['train/reg_ratio']:.2e}, "
                     #   + (f"LogZ={train_info['train/logZ']:.2e}, " if cfg.alg in ["tb", "tbbw"] else "")
                     #   + f"metric size={np.mean(train_metric_ls):.2f}+-{np.std(train_metric_ls):.2f}, "
                       + f"LogR scaled={train_logr_scaled:.2e} traj_len={train_traj_len:.2f}")
                 # For plotting
-                base_loss.append(train_info['train/base_loss'])
-                reg_loss.append(train_info['train/reg_loss_scaled'])
-                total_loss.append(train_info['train/loss'])
+                # base_loss.append(train_info['train/base_loss'])
+                # reg_loss.append(train_info['train/reg_loss_scaled'])
+                # total_loss.append(train_info['train/loss'])
                 reg_ratio.append(train_info['train/reg_ratio'])
             
             train_step += 1
@@ -281,12 +303,12 @@ def main(cfg: DictConfig):
                     
         # Plot loss
         if cfg.plot_loss and (ep % cfg.plot_freq == 0):
-            plt.plot(base_loss, label='Base Loss')
-            plt.plot(reg_loss, label='Regularization Loss Scaled')
-            plt.plot(total_loss, label='Total Loss')
-            plt.legend()
-            plt.savefig(f"/content/plots/{cfg.run_name}/{ep}.png")
-            plt.close()
+            # plt.plot(base_loss, label='Base Loss')
+            # plt.plot(reg_loss, label='Regularization Loss Scaled')
+            # plt.plot(total_loss, label='Total Loss')
+            # plt.legend()
+            # plt.savefig(f"/content/plots/{cfg.run_name}/{ep}.png")
+            # plt.close()
             # Reg ratio plot
             plt.plot(reg_ratio, label='Regularization Ratio')
             plt.legend()
