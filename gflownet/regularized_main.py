@@ -99,6 +99,29 @@ def refine_cfg(cfg):
     del cfg.d, cfg.rexp, cfg.rexpit, cfg.bs, cfg.bsit, cfg.lc, cfg.sameg, cfg.tbs
     return cfg
 
+# @torch.no_grad()
+# def rollout_regularized(gbatch, cfg, alg, ref_alg, frac_replaced):
+#     num_replaced = int(frac_replaced * cfg.batch_size)
+
+#     batch_default, metrics_default = rollout(gbatch, cfg, alg)
+#     batch_preferred, metrics_preferred = rollout(gbatch, cfg, ref_alg, if_ref_alg=True)
+#     batch_size = cfg.batch_size
+#     replace_indices = torch.randperm(batch_size)[:num_replaced]
+
+#     for idx in replace_indices:
+#         print(batch_default[4][idx])
+#         print(batch_preferred[4][idx])
+            
+#         for i in range(2, len(batch_default)):
+#             print(batch_default[i][idx])
+#             print(batch_preferred[i][idx])
+#             batch_default[i][idx] = batch_preferred[i][idx]
+
+#         batch_default[4][idx] = batch_default[4][idx] * cfg.reward_boost
+#         metrics_default[idx] = metrics_preferred[idx]
+
+#     return batch_default, metrics_default
+
 @torch.no_grad()
 def rollout(gbatch, cfg, alg, ref_alg, frac_replaced):
     num_replaced = int(frac_replaced * cfg.batch_size)
@@ -154,6 +177,10 @@ def rollout(gbatch, cfg, alg, ref_alg, frac_replaced):
     [False, False, False, False, False, False, False,  True,  True],
     [False, False, False, False, False,  True,  True,  True,  True]
     """
+
+    # Boost rewards
+    traj_r[replace_flags] += cfg.reward_boost
+    
     traj_len = 1 + torch.sum(~traj_d, dim=1) # (batch_size, )
 
     ##### graph, state, action, done, reward, trajectory length
