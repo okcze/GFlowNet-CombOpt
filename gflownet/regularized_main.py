@@ -179,7 +179,7 @@ def rollout(gbatch, cfg, alg, ref_alg, frac_replaced):
     """
 
     # Boost rewards
-    traj_r[replace_flags] = traj_r[replace_flags] * cfg.reward_boost
+    traj_r[replace_flags][:-1] = traj_r[replace_flags][:-1] * cfg.reward_boost
     
     traj_len = 1 + torch.sum(~traj_d, dim=1) # (batch_size, )
 
