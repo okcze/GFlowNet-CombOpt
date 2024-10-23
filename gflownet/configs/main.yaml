@@ -13,6 +13,7 @@ reward_boost: 1.5
 regularized: false
 plot_loss: false
 plot_freq: 1
+eval_reg: true
 
 task: mis
 input: rb200-300

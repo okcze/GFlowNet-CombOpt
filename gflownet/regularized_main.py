@@ -255,6 +255,38 @@ def main(cfg: DictConfig):
         result["train_data_used"][ep] = train_data_used
         pickle.dump(result, gzip.open("./result.json", 'wb'))
 
+    @torch.no_grad()
+    def evaluate_regularization(ep, train_step, train_data_used, logr_scaler, ref_alg):
+        torch.cuda.empty_cache()
+        num_repeat = 1
+        mis_ls, mis_top20_ls = [], []
+        logr_ls = []
+        pbar = tqdm(enumerate(test_loader))
+        pbar.set_description(f"Test Epoch {ep:2d} Data used {train_data_used:5d}")
+        for batch_idx, gbatch in pbar:
+            gbatch = gbatch.to(device)
+            gbatch_rep = dgl.batch([gbatch] * num_repeat)
+
+            env = get_mdp_class(cfg.task)(gbatch_rep, cfg)
+            state = env.state
+            while not all(env.done):
+                action = alg.sample(gbatch_rep, state, env.done, rand_prob=0.)
+                actions_preferred, _ = ref_alg.sample(gbatch, state, env.done, rand_prob=0.)
+                state = env.step(action)
+
+            logr_rep = logr_scaler(env.get_log_reward())
+            logr_ls += logr_rep.tolist()
+            curr_mis_rep = torch.tensor(env.batch_metric(state))
+            curr_mis_rep = rearrange(curr_mis_rep, "(rep b) -> b rep", rep=num_repeat).float()
+            mis_ls += curr_mis_rep.mean(dim=1).tolist()
+            mis_top20_ls += curr_mis_rep.max(dim=1)[0].tolist()
+            pbar.set_postfix({"Metric": f"{np.mean(mis_ls):.2f}+-{np.std(mis_ls):.2f}"})
+
+        print(f"Test Epoch{ep:2d} Data used{train_data_used:5d}: "
+              f"Metric={np.mean(mis_ls):.2f}+-{np.std(mis_ls):.2f}, "
+              f"top20={np.mean(mis_top20_ls):.2f}, "
+              f"LogR scaled={np.mean(logr_ls):.2e}+-{np.std(logr_ls):.2e}")
+        
     # Store loss to plot
     # base_loss = []
     # reg_loss = []
@@ -324,6 +356,8 @@ def main(cfg: DictConfig):
                     alg.save(alg_save_path_best)
                 if cfg.eval:
                     evaluate(ep, train_step, train_data_used, logr_scaler)
+                if cfg.eval_reg:
+                    evaluate_regularization(ep, train_step, train_data_used, logr_scaler, alg.ref_alg)
                     
         # Plot loss
         if cfg.plot_loss and (ep % cfg.plot_freq == 0):
