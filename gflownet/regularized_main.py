@@ -99,29 +99,6 @@ def refine_cfg(cfg):
     del cfg.d, cfg.rexp, cfg.rexpit, cfg.bs, cfg.bsit, cfg.lc, cfg.sameg, cfg.tbs
     return cfg
 
-# @torch.no_grad()
-# def rollout_regularized(gbatch, cfg, alg, ref_alg, frac_replaced):
-#     num_replaced = int(frac_replaced * cfg.batch_size)
-
-#     batch_default, metrics_default = rollout(gbatch, cfg, alg)
-#     batch_preferred, metrics_preferred = rollout(gbatch, cfg, ref_alg, if_ref_alg=True)
-#     batch_size = cfg.batch_size
-#     replace_indices = torch.randperm(batch_size)[:num_replaced]
-
-#     for idx in replace_indices:
-#         print(batch_default[4][idx])
-#         print(batch_preferred[4][idx])
-            
-#         for i in range(2, len(batch_default)):
-#             print(batch_default[i][idx])
-#             print(batch_preferred[i][idx])
-#             batch_default[i][idx] = batch_preferred[i][idx]
-
-#         batch_default[4][idx] = batch_default[4][idx] * cfg.reward_boost
-#         metrics_default[idx] = metrics_preferred[idx]
-
-#     return batch_default, metrics_default
-
 @torch.no_grad()
 def rollout(gbatch, cfg, alg, ref_alg, frac_replaced):
     env = get_mdp_class(cfg.task)(gbatch, cfg)
@@ -178,9 +155,9 @@ def rollout(gbatch, cfg, alg, ref_alg, frac_replaced):
     [False, False, False, False, False,  True,  True,  True,  True]
     """
 
-    # Boost rewards
-    traj_r[replace_flags][:-1] = traj_r[replace_flags][:-1] * cfg.reward_boost
-    
+    ### Boost rewards
+    traj_r[replace_flags] = traj_r[replace_flags] * cfg.reward_boost
+        
     traj_len = 1 + torch.sum(~traj_d, dim=1) # (batch_size, )
 
     ##### graph, state, action, done, reward, trajectory length
@@ -263,16 +240,39 @@ def main(cfg: DictConfig):
         logr_ls = []
         pbar = tqdm(enumerate(test_loader))
         pbar.set_description(f"Test Epoch {ep:2d} Data used {train_data_used:5d}")
+        
+        # Custom regularized evaluation
+        intersections = []
+
         for batch_idx, gbatch in pbar:
             gbatch = gbatch.to(device)
             gbatch_rep = dgl.batch([gbatch] * num_repeat)
 
             env = get_mdp_class(cfg.task)(gbatch_rep, cfg)
             state = env.state
+
+            env_pref = get_mdp_class(cfg.task)(gbatch_rep, cfg)
+            state_pref = env_pref.state
+
             while not all(env.done):
                 action = alg.sample(gbatch_rep, state, env.done, rand_prob=0.)
-                actions_preferred, _ = ref_alg.sample(gbatch, state, env.done, rand_prob=0.)
                 state = env.step(action)
+
+            while not all(env_pref.done): 
+                actions_pref, _ = ref_alg.sample(gbatch, state_pref, env_pref.done, rand_prob=0.)
+                state_pref = env_pref.step(actions_pref)
+
+            # Summarize results
+            def state_per_graph(state):
+                state_per_graph = torch.split(state, env.numnode_per_graph, dim=0)
+                state_per_graph = [state.cpu().numpy() for state in state_per_graph]
+                return state_per_graph
+            
+            states = state_per_graph(state)
+            states_pref = state_per_graph(state_pref)
+
+            results_intersection = [set(np.where(states[i]==1)[0].tolist()).intersection(set(np.where(states_pref[i]==1)[0].tolist())) for i in range(len(states))]
+            intersections += results_intersection
 
             logr_rep = logr_scaler(env.get_log_reward())
             logr_ls += logr_rep.tolist()
@@ -287,11 +287,20 @@ def main(cfg: DictConfig):
               f"top20={np.mean(mis_top20_ls):.2f}, "
               f"LogR scaled={np.mean(logr_ls):.2e}+-{np.std(logr_ls):.2e}")
         
+        avg_intersection = np.mean([len(i) for i in intersections])
+        max_intersection = np.max([len(i) for i in intersections])
+        print(f"Average intersection: {avg_intersection:.2f}")
+        print(f"Max intersection: {max_intersection:.2f}")
+
+        return avg_intersection, max_intersection
+        
     # Store loss to plot
     # base_loss = []
     # reg_loss = []
     # total_loss = []
     reg_ratio = []
+    avg_intersections = []
+    max_intersections = []
 
     for ep in range(cfg.epochs):
         for batch_idx, gbatch in enumerate(train_loader):
@@ -357,7 +366,9 @@ def main(cfg: DictConfig):
                 if cfg.eval:
                     evaluate(ep, train_step, train_data_used, logr_scaler)
                 if cfg.eval_reg:
-                    evaluate_regularization(ep, train_step, train_data_used, logr_scaler, alg.ref_alg)
+                    curr_avg, curr_max = evaluate_regularization(ep, train_step, train_data_used, logr_scaler, alg.ref_alg)
+                    avg_intersections.append(curr_avg)
+                    max_intersections.append(curr_max)
                     
         # Plot loss
         if cfg.plot_loss and (ep % cfg.plot_freq == 0):
@@ -367,10 +378,18 @@ def main(cfg: DictConfig):
             # plt.legend()
             # plt.savefig(f"/content/plots/{cfg.run_name}/{ep}.png")
             # plt.close()
+
             # Reg ratio plot
             plt.plot(reg_ratio, label='Regularization Ratio')
             plt.legend()
             plt.savefig(f"/content/plots/{cfg.run_name}/{ep}_reg_ratio.png")
+            plt.close()
+
+            # Intersection plot
+            plt.plot(avg_intersections, label='Average Intersection')
+            plt.plot(max_intersections, label='Max Intersection')
+            plt.legend()
+            plt.savefig(f"/content/plots/{cfg.run_name}/{ep}_intersection.png")
             plt.close()
 
     evaluate(cfg.epochs, train_step, train_data_used, logr_scaler)
