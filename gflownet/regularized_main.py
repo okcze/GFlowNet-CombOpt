@@ -13,8 +13,8 @@ import dgl
 from einops import rearrange, reduce, repeat
 
 from .data import get_data_loaders
-from .util import seed_torch, TransitionBuffer, get_mdp_class
-from .algorithm import RegularizedDetailedBalanceTransitionBuffer
+from .util import get_reference_alg, seed_torch, TransitionBuffer, get_mdp_class
+from .algorithm import DetailedBalanceTransitionBuffer
 
 torch.backends.cudnn.benchmark = True
 
@@ -22,14 +22,14 @@ torch.backends.cudnn.benchmark = True
 def get_alg_buffer(cfg, device):
     assert cfg.alg in ["db", "fl"]
     buffer = TransitionBuffer(cfg.tranbuff_size, cfg)
-    alg = RegularizedDetailedBalanceTransitionBuffer(cfg, device)
+    alg = DetailedBalanceTransitionBuffer(cfg, device)
     return alg, buffer
 
 def get_saved_alg_buffer(cfg, device, alg_load_path):
     """Allow to load model from file."""
     assert cfg.alg in ["db", "fl"]
     buffer = TransitionBuffer(cfg.tranbuff_size, cfg)
-    alg = RegularizedDetailedBalanceTransitionBuffer(cfg, device)
+    alg = DetailedBalanceTransitionBuffer(cfg, device)
     alg.load(alg_load_path)
     return alg, buffer
 
@@ -115,9 +115,10 @@ def rollout(gbatch, cfg, alg, ref_alg, frac_replaced):
     traj_s, traj_r, traj_a, traj_d = [], [], [], []
 
     ##### Sample trajectories
+    reward_exp_eval = None
     while not all(env.done):
         # Sample actions for the whole batch using both algorithms
-        actions_alg = alg.sample(gbatch, state, env.done, rand_prob=cfg.randp)
+        actions_alg = alg.sample(gbatch, state, env.done, rand_prob=cfg.randp, reward_exp=reward_exp_eval)
         actions_preferred, _ = ref_alg.sample(gbatch, state, env.done, rand_prob=cfg.randp)
         
         # Initialize the action tensor for this step
@@ -172,11 +173,12 @@ def main(cfg: DictConfig):
     device = torch.device(f"cuda:{cfg.device:d}" if torch.cuda.is_available() and cfg.device>=0 else "cpu")
     print(f"Device: {device}")
     alg, buffer = get_alg_buffer(cfg, device)
+    ref_alg = get_reference_alg(cfg)
     seed_torch(cfg.seed)
     print(str(cfg))
     print(f"Work directory: {os.getcwd()}")
 
-    # Create directory for saving plots
+    ### Create directory for saving plots
     if cfg.plot_loss and not os.path.exists(f"/content/plots/{cfg.run_name}"):
         os.makedirs(f"/content/plots/{cfg.run_name}")
     elif cfg.plot_loss and os.path.exists(f"/content/{cfg.run_name}"):
@@ -295,10 +297,7 @@ def main(cfg: DictConfig):
         return avg_intersection, max_intersection
         
     # Store loss to plot
-    # base_loss = []
-    # reg_loss = []
-    # total_loss = []
-    reg_ratio = []
+    # reg_ratio = []
     avg_intersections = []
     max_intersections = []
 
@@ -316,7 +315,7 @@ def main(cfg: DictConfig):
             train_data_used += gbatch.batch_size
 
             ###### rollout
-            batch, metric_ls = rollout(gbatch, cfg, alg, alg.ref_alg, cfg.frac_replaced)
+            batch, metric_ls = rollout(gbatch, cfg, alg, ref_alg, cfg.frac_replaced)
             buffer.add_batch(batch)
 
             logr = logr_scaler(batch[-2][:, -1])
@@ -341,18 +340,10 @@ def main(cfg: DictConfig):
 
             if train_step % cfg.print_freq == 0:
                 print(f"Epoch {ep:2d} Data used {train_data_used:.3e}: loss={train_info['train/loss']:.2e}, "
-                    #   + f"reg_loss_scaled={train_info['train/reg_loss_scaled']:.2e}, "
-                    #   + f"base_loss={train_info['train/base_loss']:.2e}, "
-                      + f"reg_ratio={train_info['train/reg_ratio']:.2e}, "
-                    #   + (f"LogZ={train_info['train/logZ']:.2e}, " if cfg.alg in ["tb", "tbbw"] else "")
-                    #   + f"metric size={np.mean(train_metric_ls):.2f}+-{np.std(train_metric_ls):.2f}, "
+                      + (f"LogZ={train_info['train/logZ']:.2e}, " if cfg.alg in ["tb", "tbbw"] else "")
+                      + f"metric size={np.mean(train_metric_ls):.2f}+-{np.std(train_metric_ls):.2f}, "
                       + f"LogR scaled={train_logr_scaled:.2e} traj_len={train_traj_len:.2f}")
-                # For plotting
-                # base_loss.append(train_info['train/base_loss'])
-                # reg_loss.append(train_info['train/reg_loss_scaled'])
-                # total_loss.append(train_info['train/loss'])
-                reg_ratio.append(train_info['train/reg_ratio'])
-            
+
             train_step += 1
 
             ##### eval
@@ -366,24 +357,18 @@ def main(cfg: DictConfig):
                 if cfg.eval:
                     evaluate(ep, train_step, train_data_used, logr_scaler)
                 if cfg.eval_reg:
-                    curr_avg, curr_max = evaluate_regularization(ep, train_step, train_data_used, logr_scaler, alg.ref_alg)
+                    curr_avg, curr_max = evaluate_regularization(ep, train_step, train_data_used, logr_scaler, ref_alg)
                     avg_intersections.append(curr_avg)
                     max_intersections.append(curr_max)
                     
         # Plot loss
         if cfg.plot_loss and (ep % cfg.plot_freq == 0):
-            # plt.plot(base_loss, label='Base Loss')
-            # plt.plot(reg_loss, label='Regularization Loss Scaled')
-            # plt.plot(total_loss, label='Total Loss')
+            
+            # # Reg ratio plot
+            # plt.plot(reg_ratio, label='Regularization Ratio')
             # plt.legend()
-            # plt.savefig(f"/content/plots/{cfg.run_name}/{ep}.png")
+            # plt.savefig(f"/content/plots/{cfg.run_name}/{ep}_reg_ratio.png")
             # plt.close()
-
-            # Reg ratio plot
-            plt.plot(reg_ratio, label='Regularization Ratio')
-            plt.legend()
-            plt.savefig(f"/content/plots/{cfg.run_name}/{ep}_reg_ratio.png")
-            plt.close()
 
             # Intersection plot
             plt.plot(avg_intersections, label='Average Intersection')
@@ -394,6 +379,7 @@ def main(cfg: DictConfig):
 
     evaluate(cfg.epochs, train_step, train_data_used, logr_scaler)
     alg.save(alg_save_path)
+
 
 if __name__ == "__main__":
     main()
