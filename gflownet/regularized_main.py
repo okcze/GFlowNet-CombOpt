@@ -100,19 +100,33 @@ def refine_cfg(cfg):
     return cfg
 
 @torch.no_grad()
-def rollout(gbatch, cfg, alg, ref_alg=None):
+def rollout(gbatch, cfg, alg, ref_alg, frac_replaced):
     env = get_mdp_class(cfg.task)(gbatch, cfg)
+    num_replaced = int(frac_replaced * len(env.done))
     state = env.state
 
-    ##### sample traj
-    reward_exp_eval = None
-    traj_s, traj_r, traj_a, traj_d = [], [], [], []
-    while not all(env.done):
-        if ref_alg:
-            action, _ = ref_alg.sample(gbatch, state, env.done, rand_prob=cfg.randp)
-        else:
-            action = alg.sample(gbatch, state, env.done, rand_prob=cfg.randp, reward_exp=reward_exp_eval)
+    ##### Select N trajectories for replacement
+    batch_size = len(env.done)
+    replace_indices = torch.randperm(batch_size)[:num_replaced]
+    replace_flags = torch.zeros(batch_size, dtype=torch.bool)
+    replace_flags[replace_indices] = True
 
+    ##### Initialize trajectory storage
+    traj_s, traj_r, traj_a, traj_d = [], [], [], []
+
+    ##### Sample trajectories
+    reward_exp_eval = None
+    while not all(env.done):
+        # Sample actions for the whole batch using both algorithms
+        actions_alg = alg.sample(gbatch, state, env.done, rand_prob=cfg.randp, reward_exp=reward_exp_eval)
+        actions_preferred, _ = ref_alg.sample(gbatch, state, env.done, rand_prob=cfg.randp)
+        
+        # Initialize the action tensor for this step
+        action = torch.empty_like(env.done, dtype=actions_alg.dtype)
+        
+        # Use actions from `ref_alg` for the trajectories marked for replacement, else use `alg`
+        action[replace_flags] = actions_preferred[replace_flags]
+        action[~replace_flags] = actions_alg[~replace_flags] 
         traj_s.append(state)
         traj_r.append(env.get_log_reward())
         traj_a.append(action)
@@ -141,63 +155,15 @@ def rollout(gbatch, cfg, alg, ref_alg=None):
     [False, False, False, False, False, False, False,  True,  True],
     [False, False, False, False, False,  True,  True,  True,  True]
     """
+
+    ### Boost rewards
+    traj_r[replace_flags] = traj_r[replace_flags] * cfg.reward_boost
+        
     traj_len = 1 + torch.sum(~traj_d, dim=1) # (batch_size, )
 
     ##### graph, state, action, done, reward, trajectory length
     batch = gbatch.cpu(), traj_s.cpu(), traj_a.cpu(), traj_d.cpu(), traj_r.cpu(), traj_len.cpu()
     return batch, env.batch_metric(state)
-
-@torch.no_grad()
-def combine_batches_random(batch_normal, batch_ref, metric_ls_normal, metric_ls_ref, cfg):
-    """
-    Combines two batches by randomly replacing a fraction of elements
-    from batch_normal with elements from batch_ref.
-    """
-    gbatch_normal, traj_s_normal, traj_a_normal, traj_d_normal, traj_r_normal, traj_len_normal = batch_normal
-    gbatch_ref, traj_s_ref, traj_a_ref, traj_d_ref, traj_r_ref, traj_len_ref = batch_ref
-
-    traj_r_ref = traj_r_ref * cfg.reward_boost
-
-    gbatch_combined = gbatch_normal
-    batch_size = traj_s_normal.size(0)
-    num_replace = int(cfg.frac_replaced * batch_size)
-    replace_indices = torch.randperm(batch_size)[:num_replace]
-    mask = torch.zeros(batch_size, dtype=torch.bool)
-    mask[replace_indices] = True
-
-    traj_s_combined = traj_s_normal.clone()
-    traj_s_combined[mask] = traj_s_ref[mask]
-
-    traj_a_combined = traj_a_normal.clone()
-    traj_a_combined[mask] = traj_a_ref[mask]
-
-    traj_d_combined = traj_d_normal.clone()
-    traj_d_combined[mask] = traj_d_ref[mask]
-
-    traj_r_combined = traj_r_normal.clone()
-    traj_r_combined[mask] = traj_r_ref[mask]
-
-    traj_len_combined = traj_len_normal.clone()
-    traj_len_combined[mask] = traj_len_ref[mask]
-
-    metric_ls_combined = []
-    for i in range(batch_size):
-        if mask[i]:
-            metric_ls_combined.append(metric_ls_ref[i])
-        else:
-            metric_ls_combined.append(metric_ls_normal[i])
-
-    # Create the combined batch
-    batch_combined = (
-        gbatch_combined,
-        traj_s_combined,
-        traj_a_combined,
-        traj_d_combined,
-        traj_r_combined,
-        traj_len_combined,
-    )
-
-    return batch_combined, metric_ls_combined
 
 @hydra.main(config_path="configs", config_name="main") # for hydra-core==1.1.0
 # @hydra.main(version_base=None, config_path="configs", config_name="main") # for newer hydra
@@ -332,7 +298,14 @@ def main(cfg: DictConfig):
         print(f"Max intersection: {max_intersection:.2f}")
 
         return avg_intersection, max_intersection
-        
+    
+    @torch.no_grad()
+    def measure_actions(train_info, batch, ref_alg):
+        actions_gfn = sample_from_logits(train_info["logits"].to("cpu"), gb=batch[0], state=batch[1], done=batch[-1], rand_prob=0.)
+        actions_ref, _ = ref_alg.sample(gbatch_rep=batch[0], state=batch[1], done=batch[-1])
+        curr_reg_ration = (len(set(actions_gfn.tolist()).intersection(set(actions_ref.tolist())))/len(actions_gfn))
+        return curr_reg_ration
+    
     # Store loss to plot
     reg_ratio = []
     avg_intersections = []
@@ -352,13 +325,10 @@ def main(cfg: DictConfig):
             train_data_used += gbatch.batch_size
 
             ###### rollout
-            batch_normal, metric_ls_normal = rollout(gbatch, cfg, alg)
-            batch_ref, metric_ls_ref = rollout(gbatch, cfg, alg, ref_alg)
-            batch, metric_ls = combine_batches_random(batch_normal, batch_ref, metric_ls_normal, metric_ls_ref, cfg)
+            batch, metric_ls = rollout(gbatch, cfg, alg, ref_alg, cfg.frac_replaced)
             
             buffer.add_batch(batch)
-            ref_buffer.add_batch(batch_ref)
-
+            
             logr = logr_scaler(batch[-2][:, -1])
             train_logr_scaled_ls += logr.tolist()
             train_logr_scaled = logr.mean().item()
@@ -373,17 +343,11 @@ def main(cfg: DictConfig):
                     break
                 curr_indices = random.sample(indices, min(len(indices), batch_size))
                 batch = buffer.sample_from_indices(curr_indices)
-
-                ### Additional batch of ref alg
-                batch_ref = ref_buffer.sample_from_indices(curr_indices) 
-
                 train_info = alg.train_step(*batch, reward_exp=reward_exp, logr_scaler=logr_scaler)
 
                 ### Get actions of GFN
-                actions_gfn = sample_from_logits(train_info["logits"], gb=batch[0], state=batch[1], done=batch[-1], rand_prob=0.)
-                print(actions_gfn)
-                print(batch_ref[3])
-                reg_ratio.append(len(set(actions_gfn.tolist()).intersection(set(batch_ref[3].tolist())))/len(actions_gfn))
+                curr_reg_ration = measure_actions(train_info, batch, ref_alg)
+                reg_ratio.append(curr_reg_ration)
 
                 indices = [i for i in indices if i not in curr_indices]
 
@@ -394,7 +358,8 @@ def main(cfg: DictConfig):
                 print(f"Epoch {ep:2d} Data used {train_data_used:.3e}: loss={train_info['train/loss']:.2e}, "
                       + (f"LogZ={train_info['train/logZ']:.2e}, " if cfg.alg in ["tb", "tbbw"] else "")
                       + f"metric size={np.mean(train_metric_ls):.2f}+-{np.std(train_metric_ls):.2f}, "
-                      + f"LogR scaled={train_logr_scaled:.2e} traj_len={train_traj_len:.2f}")
+                      + f"LogR scaled={train_logr_scaled:.2e} traj_len={train_traj_len:.2f}"
+                      + f"Reg ratio={np.mean(reg_ratio):.2f}")
 
             train_step += 1
 
@@ -418,6 +383,8 @@ def main(cfg: DictConfig):
             
             # # Reg ratio plot
             plt.plot(reg_ratio, label='Regularization Ratio')
+            plt.xlabel('Train Step')
+            plt.ylabel('Regularization Ratio')
             plt.legend()
             plt.savefig(f"/content/plots/{cfg.run_name}/{ep}_reg_ratio.png")
             plt.close()
@@ -425,6 +392,7 @@ def main(cfg: DictConfig):
             # Intersection plot
             plt.plot(avg_intersections, label='Average Intersection')
             plt.plot(max_intersections, label='Max Intersection')
+            plt.xlabel('Train Step')
             plt.legend()
             plt.savefig(f"/content/plots/{cfg.run_name}/{ep}_intersection.png")
             plt.close()
