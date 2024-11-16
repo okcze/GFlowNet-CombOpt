@@ -14,7 +14,7 @@ from einops import rearrange, reduce, repeat
 
 from .data import get_data_loaders
 from .util import get_reference_alg, seed_torch, TransitionBuffer, get_mdp_class
-from .algorithm import DetailedBalanceTransitionBuffer
+from .algorithm import DetailedBalanceTransitionBuffer, sample_from_logits
 
 torch.backends.cudnn.benchmark = True
 
@@ -100,33 +100,19 @@ def refine_cfg(cfg):
     return cfg
 
 @torch.no_grad()
-def rollout(gbatch, cfg, alg, ref_alg, frac_replaced):
+def rollout(gbatch, cfg, alg, ref_alg=None):
     env = get_mdp_class(cfg.task)(gbatch, cfg)
-    num_replaced = int(frac_replaced * len(env.done))
     state = env.state
 
-    ##### Select N trajectories for replacement
-    batch_size = len(env.done)
-    replace_indices = torch.randperm(batch_size)[:num_replaced]
-    replace_flags = torch.zeros(batch_size, dtype=torch.bool)
-    replace_flags[replace_indices] = True
-
-    ##### Initialize trajectory storage
-    traj_s, traj_r, traj_a, traj_d = [], [], [], []
-
-    ##### Sample trajectories
+    ##### sample traj
     reward_exp_eval = None
+    traj_s, traj_r, traj_a, traj_d = [], [], [], []
     while not all(env.done):
-        # Sample actions for the whole batch using both algorithms
-        actions_alg = alg.sample(gbatch, state, env.done, rand_prob=cfg.randp, reward_exp=reward_exp_eval)
-        actions_preferred, _ = ref_alg.sample(gbatch, state, env.done, rand_prob=cfg.randp)
-        
-        # Initialize the action tensor for this step
-        action = torch.empty_like(env.done, dtype=actions_alg.dtype)
-        
-        # Use actions from `ref_alg` for the trajectories marked for replacement, else use `alg`
-        action[replace_flags] = actions_preferred[replace_flags]
-        action[~replace_flags] = actions_alg[~replace_flags] 
+        if ref_alg:
+            action, _ = ref_alg.sample(gbatch, state, env.done, rand_prob=cfg.randp)
+        else:
+            action = alg.sample(gbatch, state, env.done, rand_prob=cfg.randp, reward_exp=reward_exp_eval)
+
         traj_s.append(state)
         traj_r.append(env.get_log_reward())
         traj_a.append(action)
@@ -155,16 +141,63 @@ def rollout(gbatch, cfg, alg, ref_alg, frac_replaced):
     [False, False, False, False, False, False, False,  True,  True],
     [False, False, False, False, False,  True,  True,  True,  True]
     """
-
-    ### Boost rewards
-    traj_r[replace_flags] = traj_r[replace_flags] * cfg.reward_boost
-        
     traj_len = 1 + torch.sum(~traj_d, dim=1) # (batch_size, )
 
     ##### graph, state, action, done, reward, trajectory length
     batch = gbatch.cpu(), traj_s.cpu(), traj_a.cpu(), traj_d.cpu(), traj_r.cpu(), traj_len.cpu()
     return batch, env.batch_metric(state)
 
+@torch.no_grad()
+def combine_batches_random(batch_normal, batch_ref, metric_ls_normal, metric_ls_ref, cfg):
+    """
+    Combines two batches by randomly replacing a fraction of elements
+    from batch_normal with elements from batch_ref.
+    """
+    gbatch_normal, traj_s_normal, traj_a_normal, traj_d_normal, traj_r_normal, traj_len_normal = batch_normal
+    gbatch_ref, traj_s_ref, traj_a_ref, traj_d_ref, traj_r_ref, traj_len_ref = batch_ref
+
+    traj_r_ref = traj_r_ref * cfg.reward_boost
+
+    gbatch_combined = gbatch_normal
+    batch_size = traj_s_normal.size(0)
+    num_replace = int(cfg.frac_replaced * batch_size)
+    replace_indices = torch.randperm(batch_size)[:num_replace]
+    mask = torch.zeros(batch_size, dtype=torch.bool)
+    mask[replace_indices] = True
+
+    traj_s_combined = traj_s_normal.clone()
+    traj_s_combined[mask] = traj_s_ref[mask]
+
+    traj_a_combined = traj_a_normal.clone()
+    traj_a_combined[mask] = traj_a_ref[mask]
+
+    traj_d_combined = traj_d_normal.clone()
+    traj_d_combined[mask] = traj_d_ref[mask]
+
+    traj_r_combined = traj_r_normal.clone()
+    traj_r_combined[mask] = traj_r_ref[mask]
+
+    traj_len_combined = traj_len_normal.clone()
+    traj_len_combined[mask] = traj_len_ref[mask]
+
+    metric_ls_combined = []
+    for i in range(batch_size):
+        if mask[i]:
+            metric_ls_combined.append(metric_ls_ref[i])
+        else:
+            metric_ls_combined.append(metric_ls_normal[i])
+
+    # Create the combined batch
+    batch_combined = (
+        gbatch_combined,
+        traj_s_combined,
+        traj_a_combined,
+        traj_d_combined,
+        traj_r_combined,
+        traj_len_combined,
+    )
+
+    return batch_combined, metric_ls_combined
 
 @hydra.main(config_path="configs", config_name="main") # for hydra-core==1.1.0
 # @hydra.main(version_base=None, config_path="configs", config_name="main") # for newer hydra
@@ -173,6 +206,10 @@ def main(cfg: DictConfig):
     device = torch.device(f"cuda:{cfg.device:d}" if torch.cuda.is_available() and cfg.device>=0 else "cpu")
     print(f"Device: {device}")
     alg, buffer = get_alg_buffer(cfg, device)
+
+    ### Additional buffer for reference algorithm
+    _, ref_buffer = get_alg_buffer(cfg, device)
+
     ref_alg = get_reference_alg(cfg)
     seed_torch(cfg.seed)
     print(str(cfg))
@@ -297,7 +334,7 @@ def main(cfg: DictConfig):
         return avg_intersection, max_intersection
         
     # Store loss to plot
-    # reg_ratio = []
+    reg_ratio = []
     avg_intersections = []
     max_intersections = []
 
@@ -315,8 +352,12 @@ def main(cfg: DictConfig):
             train_data_used += gbatch.batch_size
 
             ###### rollout
-            batch, metric_ls = rollout(gbatch, cfg, alg, ref_alg, cfg.frac_replaced)
+            batch_normal, metric_ls_normal = rollout(gbatch, cfg, alg)
+            batch_ref, metric_ls_ref = rollout(gbatch, cfg, alg, ref_alg)
+            batch, metric_ls = combine_batches_random(batch_normal, batch_ref, metric_ls_normal, metric_ls_ref, cfg)
+            
             buffer.add_batch(batch)
+            ref_buffer.add_batch(batch_ref)
 
             logr = logr_scaler(batch[-2][:, -1])
             train_logr_scaled_ls += logr.tolist()
@@ -332,7 +373,18 @@ def main(cfg: DictConfig):
                     break
                 curr_indices = random.sample(indices, min(len(indices), batch_size))
                 batch = buffer.sample_from_indices(curr_indices)
+
+                ### Additional batch of ref alg
+                batch_ref = ref_buffer.sample_from_indices(curr_indices) 
+
                 train_info = alg.train_step(*batch, reward_exp=reward_exp, logr_scaler=logr_scaler)
+
+                ### Get actions of GFN
+                actions_gfn = sample_from_logits(train_info["logits"], gb=batch[0], state=batch[1], done=batch[-1], rand_prob=0.)
+                print(actions_gfn)
+                print(batch_ref[3])
+                reg_ratio.append(len(set(actions_gfn.tolist()).intersection(set(batch_ref[3].tolist())))/len(actions_gfn))
+
                 indices = [i for i in indices if i not in curr_indices]
 
             if cfg.onpolicy:
@@ -365,10 +417,10 @@ def main(cfg: DictConfig):
         if cfg.plot_loss and (ep % cfg.plot_freq == 0):
             
             # # Reg ratio plot
-            # plt.plot(reg_ratio, label='Regularization Ratio')
-            # plt.legend()
-            # plt.savefig(f"/content/plots/{cfg.run_name}/{ep}_reg_ratio.png")
-            # plt.close()
+            plt.plot(reg_ratio, label='Regularization Ratio')
+            plt.legend()
+            plt.savefig(f"/content/plots/{cfg.run_name}/{ep}_reg_ratio.png")
+            plt.close()
 
             # Intersection plot
             plt.plot(avg_intersections, label='Average Intersection')
