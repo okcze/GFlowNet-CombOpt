@@ -13,10 +13,7 @@ from einops import rearrange, reduce, repeat
 
 from .data import get_data_loaders
 from .util import seed_torch, TransitionBuffer, get_mdp_class, get_reference_alg
-from .algorithm import DetailedBalanceTransitionBuffer, RegularizedDetailedBalanceTransitionBuffer
-
-from .ref_alg.mis_greedy import MISGreedy
-from .ref_alg.mis_heuristic import MISHeuristic
+from .algorithm import DetailedBalanceTransitionBuffer
 
 torch.backends.cudnn.benchmark = True
 
@@ -24,19 +21,14 @@ torch.backends.cudnn.benchmark = True
 def get_alg_buffer(cfg, device):
     assert cfg.alg in ["db", "fl"]
     buffer = TransitionBuffer(cfg.tranbuff_size, cfg)
-    if cfg.regularized:
-        alg = RegularizedDetailedBalanceTransitionBuffer(cfg, device)
-    else:
-        alg = DetailedBalanceTransitionBuffer(cfg, device)
+    alg = DetailedBalanceTransitionBuffer(cfg, device)
     return alg, buffer
 
 def get_saved_alg_buffer(cfg, device):
+    """Allow to load model from file."""
     assert cfg.alg in ["db", "fl"]
     buffer = TransitionBuffer(cfg.tranbuff_size, cfg)
-    if cfg.regularized:
-        alg = RegularizedDetailedBalanceTransitionBuffer(cfg, device)
-    else:
-        alg = DetailedBalanceTransitionBuffer(cfg, device)
+    alg = DetailedBalanceTransitionBuffer(cfg, device)
     alg.load(cfg.alg_load_path)
     return alg, buffer
 
@@ -161,15 +153,15 @@ def sample(cfg: DictConfig):
     print(f"Device: {device}")
     
     ### Allow usage of reference algorithms
-    if cfg.ref_alg == "":
-        alg, _ = get_saved_alg_buffer(cfg, device)
-        alg_name = "GFN"
+    if cfg.ref_alg != "":
+        alg = get_reference_alg(cfg)
+        alg_name = alg.name
     elif cfg.regularized:
         alg, _ = get_saved_alg_buffer(cfg, device)
         alg_name = "reg_" + cfg.alg_load_path.split(".")[0].split("/")[-1]
     else:
-        alg = get_reference_alg(cfg)
-        alg_name = alg.name
+        alg, _ = get_saved_alg_buffer(cfg, device)
+        alg_name = "GFN"
     
     seed_torch(cfg.seed)
     print(str(cfg))
