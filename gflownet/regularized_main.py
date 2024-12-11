@@ -359,8 +359,8 @@ def main(cfg: DictConfig):
                 print(f"Epoch {ep:2d} Data used {train_data_used:.3e}: loss={train_info['train/loss']:.2e}, "
                       + (f"LogZ={train_info['train/logZ']:.2e}, " if cfg.alg in ["tb", "tbbw"] else "")
                       + f"metric size={np.mean(train_metric_ls):.2f}+-{np.std(train_metric_ls):.2f}, "
-                      + f"LogR scaled={train_logr_scaled:.2e} traj_len={train_traj_len:.2f}"
-                      + f"Avg reg ratio={np.mean(reg_ratio):.2f}")
+                      + f"LogR scaled={train_logr_scaled:.2e} traj_len={train_traj_len:.2f}, "
+                      + f"avg reg ratio={np.mean(reg_ratio):.2f}")
 
             train_step += 1
 
