@@ -13,7 +13,7 @@ import dgl
 from einops import rearrange, reduce, repeat
 
 from .data import get_data_loaders
-from .util import get_reference_alg, seed_torch, TransitionBuffer, get_mdp_class
+from .util import get_reference_alg, seed_torch, TransitionBuffer, get_mdp_class, manage_metrics_dir
 from .algorithm import DetailedBalanceTransitionBuffer, sample_from_logits
 
 torch.backends.cudnn.benchmark = True
@@ -181,12 +181,10 @@ def main(cfg: DictConfig):
     print(str(cfg))
     print(f"Work directory: {os.getcwd()}")
 
-    ### Create directory for saving plots
-    if cfg.plot_loss and not os.path.exists(f"/content/plots/{cfg.run_name}"):
-        os.makedirs(f"/content/plots/{cfg.run_name}")
-    elif cfg.plot_loss and os.path.exists(f"/content/{cfg.run_name}"):
-        import shutil
-        shutil.rmtree(f"/content/plots/{cfg.run_name}")
+    ### Create directory for saving regularization metrics
+    if cfg.plot_loss:
+        path = f"/content/results/{cfg.run_name}"
+        manage_metrics_dir(path)
 
     train_loader, test_loader = get_data_loaders(cfg)
     trainset_size = len(train_loader.dataset)
@@ -294,13 +292,15 @@ def main(cfg: DictConfig):
         
         avg_intersection = np.mean([len(i) for i in intersections])
         max_intersection = np.max([len(i) for i in intersections])
+        intersections = [len(i) for i in intersections]
         print(f"Average intersection: {avg_intersection:.2f}")
         print(f"Max intersection: {max_intersection:.2f}")
 
-        return avg_intersection, max_intersection
+        return avg_intersection, max_intersection, intersections
     
     @torch.no_grad()
     def measure_actions(train_info, batch, ref_alg):
+        """Measure the ratio of GFN to reference algorithm overlap in current batch."""
         actions_gfn = sample_from_logits(train_info["logits"].to("cpu"), gb=batch[0], state=batch[1], done=batch[-1], rand_prob=0.)
         actions_ref, _ = ref_alg.sample(gbatch_rep=batch[0], state=batch[1], done=batch[-1])
         curr_reg_ration = (len(set(actions_gfn.tolist()).intersection(set(actions_ref.tolist())))/len(actions_gfn))
@@ -310,6 +310,7 @@ def main(cfg: DictConfig):
     reg_ratio = []
     avg_intersections = []
     max_intersections = []
+    intersections = []
 
     for ep in range(cfg.epochs):
         for batch_idx, gbatch in enumerate(train_loader):
@@ -359,7 +360,7 @@ def main(cfg: DictConfig):
                       + (f"LogZ={train_info['train/logZ']:.2e}, " if cfg.alg in ["tb", "tbbw"] else "")
                       + f"metric size={np.mean(train_metric_ls):.2f}+-{np.std(train_metric_ls):.2f}, "
                       + f"LogR scaled={train_logr_scaled:.2e} traj_len={train_traj_len:.2f}"
-                      + f"Reg ratio={np.mean(reg_ratio):.2f}")
+                      + f"Avg reg ratio={np.mean(reg_ratio):.2f}")
 
             train_step += 1
 
@@ -374,19 +375,20 @@ def main(cfg: DictConfig):
                 if cfg.eval:
                     evaluate(ep, train_step, train_data_used, logr_scaler)
                 if cfg.eval_reg:
-                    curr_avg, curr_max = evaluate_regularization(ep, train_step, train_data_used, logr_scaler, ref_alg)
+                    curr_avg, curr_max, curr_intersections = evaluate_regularization(ep, train_step, train_data_used, logr_scaler, ref_alg)
                     avg_intersections.append(curr_avg)
                     max_intersections.append(curr_max)
+                    intersections += curr_intersections
                     
         # Plot loss
         if cfg.plot_loss and (ep % cfg.plot_freq == 0):
             
-            # # Reg ratio plot
+            # Reg ratio plot
             plt.plot(reg_ratio, label='Regularization Ratio')
             plt.xlabel('Train Step')
             plt.ylabel('Regularization Ratio')
             plt.legend()
-            plt.savefig(f"/content/plots/{cfg.run_name}/{ep}_reg_ratio.png")
+            plt.savefig(f"{path}/plots/{ep}_reg_ratio.png")
             plt.close()
 
             # Intersection plot
@@ -394,8 +396,12 @@ def main(cfg: DictConfig):
             plt.plot(max_intersections, label='Max Intersection')
             plt.xlabel('Train Step')
             plt.legend()
-            plt.savefig(f"/content/plots/{cfg.run_name}/{ep}_intersection.png")
+            plt.savefig(f"{path}/plots/{ep}_intersection.png")
             plt.close()
+
+        # Save metrics each epoch
+        np.array(reg_ratio).dump(f"{path}/metrics/reg_ratio.npy")
+        np.array(intersections).reshape(cfg.epochs, -1).dump(f"{path}/metrics/intersections.npy")
 
     evaluate(cfg.epochs, train_step, train_data_used, logr_scaler)
     alg.save(alg_save_path)

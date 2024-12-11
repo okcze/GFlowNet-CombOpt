@@ -398,3 +398,13 @@ def get_reference_alg(cfg):
         return MISLocalImprovement()
     else:
         raise NotImplementedError
+
+def manage_metrics_dir(path):
+    if not os.path.exists(path):
+        os.makedirs(f"{path}/metrics")
+        os.makedirs(f"{path}/plots")
+    elif os.path.exists(path):
+        import shutil
+        shutil.rmtree(f"{path}/metrics")
+        shutil.rmtree(f"{path}/plots")
+        
