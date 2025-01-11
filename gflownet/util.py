@@ -389,6 +389,7 @@ def get_reference_alg(cfg):
     from .ref_alg.mis_greedy import MISGreedy
     from .ref_alg.mis_heuristic import MISHeuristic
     from .ref_alg.mis_local_improvement import MISLocalImprovement
+    from .ref_alg.mds_greedy import MDSGreedy
 
     if cfg.ref_alg == "mis_greedy":
         return MISGreedy()
@@ -396,6 +397,8 @@ def get_reference_alg(cfg):
         return MISHeuristic()
     elif cfg.ref_alg == "mis_local_improvement":
         return MISLocalImprovement()
+    elif cfg.ref_alg == "mds_greedy":
+        return MDSGreedy()
     else:
         raise NotImplementedError
 
@@ -407,4 +410,3 @@ def manage_metrics_dir(path):
         import shutil
         shutil.rmtree(f"{path}/metrics")
         shutil.rmtree(f"{path}/plots")
-        

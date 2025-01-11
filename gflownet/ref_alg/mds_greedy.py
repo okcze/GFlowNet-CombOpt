@@ -1,5 +1,4 @@
 import torch
-
 from ..util import get_decided
 
 class MDSGreedy:
@@ -8,7 +7,7 @@ class MDSGreedy:
 
     @torch.no_grad()
     def sample(self, gbatch_rep, state, done, rand_prob=0., reward_exp=1.0):
-        device = state.device
+        device = state.device  # Ensure tensors are on the same device
 
         # Initialize actions with -1 for graphs that are already done
         actions = torch.full((gbatch_rep.batch_size,), -1, dtype=torch.long, device=device)
@@ -20,7 +19,7 @@ class MDSGreedy:
         # Prepare output tensor for logits
         combined_output_size = sum(batch_num_nodes)
         combined_output = torch.full((combined_output_size,), 10**-6, device=device)
-        
+
         # Calculate cumulative sums of node counts for indexing
         cumulative_nodes = [0] + torch.cumsum(torch.tensor(batch_num_nodes), dim=0).tolist()
 
@@ -38,7 +37,7 @@ class MDSGreedy:
             if len(uncovered_nodes) == 0:
                 continue
 
-            # Greedy choice: pick the node that covers the most uncovered nodes.
+            # Greedy choice: pick the node with the maximum number of uncovered neighbors.
             best_node = -1
             best_coverage = -1
 
