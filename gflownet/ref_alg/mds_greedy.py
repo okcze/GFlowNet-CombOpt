@@ -1,4 +1,5 @@
 import torch
+import dgl
 from ..util import get_decided
 
 class MDSGreedy:
@@ -9,50 +10,54 @@ class MDSGreedy:
     def sample(self, gbatch_rep, state, done, rand_prob=0., reward_exp=1.0):
         device = state.device  # Ensure tensors are on the same device
 
-        # Initialize actions with -1 for graphs that are already done
-        actions = torch.full((gbatch_rep.batch_size,), -1, dtype=torch.long, device=device)
-
-        # Split state into individual graph states
+        # Number of nodes per graph and cumulative offsets
         batch_num_nodes = gbatch_rep.batch_num_nodes().tolist()
-        graphs_states = torch.split(state, batch_num_nodes, dim=0)
+        cumulative_nodes = [0] + torch.cumsum(torch.tensor(batch_num_nodes, device=device), dim=0).tolist()
 
-        # Prepare output tensor for logits
-        combined_output_size = sum(batch_num_nodes)
-        combined_output = torch.full((combined_output_size,), 10**-6, device=device)
+        # Initialize actions and logits
+        actions = torch.full((len(batch_num_nodes),), -1, dtype=torch.long, device=device)
+        combined_output = torch.full((gbatch_rep.num_nodes(),), -1, device=device)
 
-        # Calculate cumulative sums of node counts for indexing
-        cumulative_nodes = [0] + torch.cumsum(torch.tensor(batch_num_nodes), dim=0).tolist()
+        # Extract decided mask from state
+        decided_mask = get_decided(state)
 
-        for i, (graph_state, num_nodes) in enumerate(zip(graphs_states, batch_num_nodes)):
-            if done[i]:
-                continue
+        # Create a mask for uncovered nodes
+        uncovered_mask = ~decided_mask
 
-            # Create subgraph for this batch element
-            subgraph_nodes = torch.arange(num_nodes, device=device)
-            subgraph = gbatch_rep.subgraph(subgraph_nodes)
+        # Compute coverage for all nodes in the batch
+        gbatch_rep.ndata['uncovered'] = uncovered_mask.float()
+        gbatch_rep.update_all(
+            dgl.function.copy_u('uncovered', 'msg'),
+            dgl.function.sum('msg', 'coverage')
+        )
 
-            decided_mask = get_decided(graph_state)
-            uncovered_nodes = subgraph_nodes[~decided_mask]
+        # Extract coverage for all nodes
+        coverage = gbatch_rep.ndata['coverage']
+        coverage[~uncovered_mask] = -1  # Exclude already decided nodes
 
-            if len(uncovered_nodes) == 0:
-                continue
+        # Select the best node for each graph
+        for i, num_nodes in enumerate(batch_num_nodes):
+            
+            # Get the range of nodes belonging to the i-th graph
+            start_idx = cumulative_nodes[i]
+            end_idx = cumulative_nodes[i + 1]
 
-            # Greedy choice: pick the node with the maximum number of uncovered neighbors.
-            best_node = -1
-            best_coverage = -1
+            # Compute best node in the subgraph
+            graph_coverage = coverage[start_idx:end_idx]
 
-            for node in uncovered_nodes:
-                neighbors = subgraph.successors(node)
-                candidates = torch.cat([neighbors, node.unsqueeze(0)])
-                coverage = torch.sum(~decided_mask[candidates])
+            # Ensure the graph coverage is masked appropriately for this graph's nodes
+            graph_decided_mask = decided_mask[start_idx:end_idx]
+            graph_coverage[graph_decided_mask] = -1
 
-                if coverage > best_coverage:
-                    best_coverage = coverage
-                    best_node = node.item()
+            best_node_local = torch.argmax(graph_coverage).item()
 
-            # Record the chosen node’s logit and action
-            offset = cumulative_nodes[i]
-            combined_output[offset + best_node] = 1
-            actions[i] = best_node
+            # Map local node index to global index
+            best_node_global = start_idx + best_node_local
+
+            # Record the selected node and update logits
+            combined_output[best_node_global] = 1
+
+            if not done[i]:
+                actions[i] = best_node_local
 
         return actions, combined_output

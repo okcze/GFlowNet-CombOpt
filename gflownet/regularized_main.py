@@ -249,6 +249,7 @@ def main(cfg: DictConfig):
 
         for batch_idx, gbatch in pbar:
             gbatch = gbatch.to(device)
+            gbatch = dgl.batch([gbatch] * num_repeat)
             gbatch_rep = dgl.batch([gbatch] * num_repeat)
 
             env = get_mdp_class(cfg.task)(gbatch_rep, cfg)
