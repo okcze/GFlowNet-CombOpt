@@ -340,7 +340,7 @@ def main(cfg: DictConfig):
             ##### train
             batch_size = min(len(buffer), cfg.batch_size)
             indices = list(range(len(buffer)))
-            for _ in range(cfg.tstep):
+            for tstep in range(cfg.tstep):
                 if len(indices) == 0:
                     break
                 curr_indices = random.sample(indices, min(len(indices), batch_size))
@@ -348,8 +348,9 @@ def main(cfg: DictConfig):
                 train_info = alg.train_step(*batch, reward_exp=reward_exp, logr_scaler=logr_scaler)
 
                 ### Get actions of GFN
-                curr_reg_ration = measure_actions(train_info, batch, ref_alg)
-                reg_ratio.append(curr_reg_ration)
+                if cfg.eval_reg and tstep % cfg.reg_ratio_freq == 0:
+                    curr_reg_ration = measure_actions(train_info, batch, ref_alg)
+                    reg_ratio.append(curr_reg_ration)
 
                 indices = [i for i in indices if i not in curr_indices]
 
