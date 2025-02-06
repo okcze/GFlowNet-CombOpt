@@ -116,9 +116,6 @@ class DetailedBalanceTransitionBuffer(DetailedBalance):
         _, flows_out = self.model_flow(gb_two, s_two, reward_exp) # (2 * num_graphs, 1)
         flows, flows_next = flows_out[:batch_size, 0], flows_out[batch_size:, 0]
 
-        ### Return raw logits for action measurement
-        pf_logits_raw = logits[:total_num_nodes, ..., 0]
-
         pf_logits = logits[:total_num_nodes, ..., 0]
         pf_logits[get_decided(s)] = -np.inf
         pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
@@ -140,7 +137,7 @@ class DetailedBalanceTransitionBuffer(DetailedBalance):
             losses = (lhs - rhs).pow(2)
             loss = (losses[d].sum() * self.leaf_coef + losses[~d].sum()) / batch_size
 
-        return_dict = {"train/loss": loss.item(), "logits": pf_logits_raw}
+        return_dict = {"train/loss": loss.item()}
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()

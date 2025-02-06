@@ -297,10 +297,10 @@ def main(cfg: DictConfig):
         return avg_intersection, max_intersection, intersections
     
     @torch.no_grad()
-    def measure_actions(train_info, *batch, ref_alg):
+    def measure_actions(*batch, alg, ref_alg):
         """Measure the ratio of GFN to reference algorithm overlap in current batch."""
         gb, s, logr, a, s_next, logr_next, d = batch
-        actions_gfn = sample_from_logits(train_info["logits"].to("cpu"), gb=gb, state=s, done=d, rand_prob=0.)
+        actions_gfn = alg.sample(gb, s, d)
         actions_ref, _ = ref_alg.sample(gbatch_rep=gb, state=s, done=d)
         curr_reg_ration = (len(set(actions_gfn.tolist()).intersection(set(actions_ref.tolist())))/len(actions_gfn))
         return curr_reg_ration
@@ -345,10 +345,10 @@ def main(cfg: DictConfig):
                 batch = buffer.sample_from_indices(curr_indices)
                 train_info = alg.train_step(*batch, reward_exp=reward_exp, logr_scaler=logr_scaler)
 
-                # ### Get actions of GFN
-                # if cfg.eval_reg and tstep % cfg.reg_ratio_freq == 0:
-                #     curr_reg_ration = measure_actions(train_info, *batch, ref_alg)
-                #     reg_ratio.append(curr_reg_ration)
+                ### Get actions of GFN
+                if cfg.eval_reg and tstep % cfg.reg_ratio_freq == 0:
+                    curr_reg_ration = measure_actions(*batch, alg, ref_alg)
+                    reg_ratio.append(curr_reg_ration)
 
                 indices = [i for i in indices if i not in curr_indices]
 
