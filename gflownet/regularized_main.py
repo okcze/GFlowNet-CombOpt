@@ -297,12 +297,14 @@ def main(cfg: DictConfig):
         return avg_intersection, max_intersection, intersections
     
     @torch.no_grad()
-    def measure_actions(*batch, alg, ref_alg):
+    def measure_actions(batch, alg, ref_alg):
         """Measure the ratio of GFN to reference algorithm overlap in current batch."""
         gb, s, logr, a, s_next, logr_next, d = batch
+        gb, s, logr, a, s_next, logr_next, d = gb.to(alg.device), s.to(alg.device), logr.to(alg.device), \
+                    a.to(alg.device), s_next.to(alg.device), logr_next.to(alg.device), d.to(alg.device)
         actions_gfn = alg.sample(gb, s, d)
         actions_ref, _ = ref_alg.sample(gbatch_rep=gb, state=s, done=d)
-        curr_reg_ration = (len(set(actions_gfn.tolist()).intersection(set(actions_ref.tolist())))/len(actions_gfn))
+        curr_reg_ration = torch.mean((actions_gfn == actions_ref).float()).item()
         return curr_reg_ration
     
     # Store loss to plot
@@ -347,7 +349,7 @@ def main(cfg: DictConfig):
 
                 ### Get actions of GFN
                 if cfg.eval_reg and tstep % cfg.reg_ratio_freq == 0:
-                    curr_reg_ration = measure_actions(*batch, alg, ref_alg)
+                    curr_reg_ration = measure_actions(batch=batch, alg=alg, ref_alg=ref_alg)
                     reg_ratio.append(curr_reg_ration)
 
                 indices = [i for i in indices if i not in curr_indices]
@@ -374,34 +376,34 @@ def main(cfg: DictConfig):
                     alg.save(alg_save_path_best)
                 if cfg.eval:
                     evaluate(ep, train_step, train_data_used, logr_scaler)
-                # if cfg.eval_reg:
-                #     curr_avg, curr_max, curr_intersections = evaluate_regularization(ep, train_step, train_data_used, logr_scaler, ref_alg)
-                #     avg_intersections.append(curr_avg)
-                #     max_intersections.append(curr_max)
-                #     intersections += curr_intersections
+                if cfg.eval_reg:
+                    curr_avg, curr_max, curr_intersections = evaluate_regularization(ep, train_step, train_data_used, logr_scaler, ref_alg)
+                    avg_intersections.append(curr_avg)
+                    max_intersections.append(curr_max)
+                    intersections += curr_intersections
                     
         # Plot loss
-        # if cfg.plot_loss and (ep % cfg.plot_freq == 0):
+        if cfg.plot_loss and (ep % cfg.plot_freq == 0):
             
-        #     # Reg ratio plot
-        #     plt.plot(reg_ratio, label='Regularization Ratio')
-        #     plt.xlabel('Train Step')
-        #     plt.ylabel('Regularization Ratio')
-        #     plt.legend()
-        #     plt.savefig(f"{path}/plots/{ep}_reg_ratio.png")
-        #     plt.close()
+            # Reg ratio plot
+            plt.plot(reg_ratio, label='Regularization Ratio')
+            plt.xlabel('Train Step')
+            plt.ylabel('Regularization Ratio')
+            plt.legend()
+            plt.savefig(f"{path}/plots/{ep}_reg_ratio.png")
+            plt.close()
 
-        #     # Intersection plot
-        #     plt.plot(avg_intersections, label='Average Intersection')
-        #     plt.plot(max_intersections, label='Max Intersection')
-        #     plt.xlabel('Train Step')
-        #     plt.legend()
-        #     plt.savefig(f"{path}/plots/{ep}_intersection.png")
-        #     plt.close()
+            # Intersection plot
+            plt.plot(avg_intersections, label='Average Intersection')
+            plt.plot(max_intersections, label='Max Intersection')
+            plt.xlabel('Train Step')
+            plt.legend()
+            plt.savefig(f"{path}/plots/{ep}_intersection.png")
+            plt.close()
 
-        # # Save metrics each epoch
-        # np.array(reg_ratio).dump(f"{path}/metrics/reg_ratio.npy")
-        # np.array(intersections).reshape(cfg.epochs, -1).dump(f"{path}/metrics/intersections.npy")
+        # Save metrics each epoch
+        np.array(reg_ratio).dump(f"{path}/metrics/reg_ratio.npy")
+        np.array(intersections).reshape(cfg.epochs, -1).dump(f"{path}/metrics/intersections.npy")
 
     evaluate(cfg.epochs, train_step, train_data_used, logr_scaler)
     alg.save(alg_save_path)
