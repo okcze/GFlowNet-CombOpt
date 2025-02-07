@@ -8,7 +8,6 @@ run_name: default_run
 ref_alg: ""
 frac_replaced: 0.25
 reward_boost: 1.5
-regularized: false
 plot_loss: true
 plot_freq: 1
 eval_reg: true
