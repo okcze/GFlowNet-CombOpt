@@ -172,7 +172,7 @@ def main(cfg: DictConfig):
     device = torch.device(f"cuda:{cfg.device:d}" if torch.cuda.is_available() and cfg.device>=0 else "cpu")
     print(f"Device: {device}")
 
-    if cfg.alg_load_path is not None:
+    if len(cfg.alg_load_path) > 0:
         alg, buffer = get_saved_alg_buffer(cfg, device, cfg.alg_load_path)
         print(f"Loaded model from {cfg.alg_load_path}")
     else:
