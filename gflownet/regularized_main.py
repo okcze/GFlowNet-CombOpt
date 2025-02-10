@@ -171,7 +171,13 @@ def main(cfg: DictConfig):
     cfg = refine_cfg(cfg)
     device = torch.device(f"cuda:{cfg.device:d}" if torch.cuda.is_available() and cfg.device>=0 else "cpu")
     print(f"Device: {device}")
-    alg, buffer = get_alg_buffer(cfg, device)
+
+    if cfg.alg_load_path is not None:
+        alg, buffer = get_saved_alg_buffer(cfg, device, cfg.alg_load_path)
+        print(f"Loaded model from {cfg.alg_load_path}")
+    else:
+        alg, buffer = get_alg_buffer(cfg, device)
+        print(f"New model {alg.__class__.__name__}")
 
     ref_alg = get_reference_alg(cfg)
     seed_torch(cfg.seed)
