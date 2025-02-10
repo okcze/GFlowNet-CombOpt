@@ -390,6 +390,7 @@ def get_reference_alg(cfg):
     from .ref_alg.mis_heuristic import MISHeuristic
     from .ref_alg.mis_local_improvement import MISLocalImprovement
     from .ref_alg.mds_greedy import MDSGreedy
+    from .ref_alg.maxcut_greedy import MaxCutGreedy
 
     if cfg.ref_alg == "mis_greedy":
         return MISGreedy()
@@ -399,6 +400,8 @@ def get_reference_alg(cfg):
         return MISLocalImprovement()
     elif cfg.ref_alg == "mds_greedy":
         return MDSGreedy()
+    elif cfg.ref_alg == "maxcut_greedy":
+        return MaxCutGreedy()
     else:
         raise NotImplementedError
 
