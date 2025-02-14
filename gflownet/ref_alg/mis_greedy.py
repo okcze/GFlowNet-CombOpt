@@ -1,5 +1,4 @@
 import torch
-
 from ..util import get_decided
 
 class MISGreedy:
@@ -13,39 +12,42 @@ class MISGreedy:
         # Initialize actions with -1 to denote impossible actions for done graphs
         actions = torch.full((gbatch_rep.batch_size,), -1, dtype=torch.long, device=device)
 
-        # Split state into individual graph states
+        # Get number of nodes per graph and compute cumulative offsets
         batch_num_nodes = gbatch_rep.batch_num_nodes().tolist()
+        cumulative_nodes = [0] + torch.cumsum(torch.tensor(batch_num_nodes), dim=0).tolist()
+
+        # Split state into individual graph states for local processing
         graphs_states = torch.split(state, batch_num_nodes, dim=0)
 
         # Initialize the combined output tensor
         combined_output_size = sum(batch_num_nodes)
         combined_output = torch.full((combined_output_size,), 10**-6, device=device)
 
-        # Calculate cumulative sums of the number of nodes to use as offsets
-        cumulative_nodes = [0] + torch.cumsum(torch.tensor(batch_num_nodes), dim=0).tolist()
-
         for i, (graph_state, num_nodes) in enumerate(zip(graphs_states, batch_num_nodes)):
-            # Ensure the subgraph is on the same device
-            subgraph_nodes = torch.arange(num_nodes).to(device)
+            # Compute the start and end indices for the i-th graph in the batched graph
+            start_idx = cumulative_nodes[i]
+            end_idx = cumulative_nodes[i + 1]
+
+            # Correctly extract the subgraph nodes using global indices
+            subgraph_nodes = torch.arange(start_idx, end_idx, device=device)
             subgraph = gbatch_rep.subgraph(subgraph_nodes)
             
-            # Mask already decided nodes
+            # Mask already decided nodes in the local state
             decided_mask = get_decided(graph_state)
             
-            # Get degrees directly from DGL without converting to NetworkX
+            # Get degrees directly from DGL (in-degree + out-degree)
             degrees = subgraph.in_degrees() + subgraph.out_degrees()
             
-            # Set the degrees of decided nodes to a large value (to exclude them)
+            # Exclude decided nodes by setting their degree to a very large value
             degrees[decided_mask] = torch.iinfo(degrees.dtype).max
 
-            # Get the node with the minimum degree that isn't decided
+            # Get the node with the minimum degree among undecided nodes
             min_degree_node = torch.argmin(degrees).item()
             
-            # Update the combined output tensor with logits
-            offset = cumulative_nodes[i]
-            combined_output[offset + min_degree_node] = 1
+            # Update the combined output tensor at the correct global index
+            combined_output[start_idx + min_degree_node] = 1
 
-            # Check if the graph is already done
+            # Record the selected local node index for this graph if it is not done
             if not done[i]:
                 actions[i] = min_degree_node
         
