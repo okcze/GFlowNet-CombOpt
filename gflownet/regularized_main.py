@@ -301,9 +301,8 @@ def main(cfg: DictConfig):
               f"top20={np.mean(mis_top20_ls):.2f}, "
               f"LogR scaled={np.mean(logr_ls):.2e}+-{np.std(logr_ls):.2e}")
         
-        avg_intersection = np.mean([len(i) for i in intersections])
-        max_intersection = np.max([len(i) for i in intersections])
-        intersections = [len(i) for i in intersections]
+        avg_intersection = np.mean(intersections)
+        max_intersection = np.max(intersections)
         print(f"Average intersection: {avg_intersection:.2f}")
         print(f"Max intersection: {max_intersection:.2f}")
 
