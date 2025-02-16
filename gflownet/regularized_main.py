@@ -278,7 +278,14 @@ def main(cfg: DictConfig):
             states = state_per_graph(state)
             states_pref = state_per_graph(state_pref)
 
-            results_intersection = [set(np.where(states[i]==1)[0].tolist()).intersection(set(np.where(states_pref[i]==1)[0].tolist())) for i in range(len(states))]
+            results_intersection = [
+                (
+                    len(set(np.where(ref_sol == 1)[0]) & set(np.where(candidate == 1)[0]))
+                    / len(np.where(ref_sol == 1)[0])
+                    if np.any(ref_sol == 1) else 0.0
+                )
+                for ref_sol, candidate in zip(states_pref, states)
+            ]
             intersections += results_intersection
 
             logr_rep = logr_scaler(env.get_log_reward())
