@@ -49,6 +49,11 @@ class MDSGreedy:
             graph_decided_mask = decided_mask[start_idx:end_idx]
             graph_coverage[graph_decided_mask] = -1
 
+            max_value = graph_coverage.max().item()
+            if max_value == -1:
+                # No valid candidate found for this graph; leave action as -1.
+                continue
+
             best_node_local = torch.argmax(graph_coverage).item()
 
             # Map local node index to global index
