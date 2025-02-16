@@ -40,7 +40,7 @@ trainsize: 4000
 testsize: 500
 tstep: 30
 bsit: 8
-bs: 64
+bs: 128
 tbs: 30
 shuffle: true # for train loader
 num_workers: 2 # for dataloader
