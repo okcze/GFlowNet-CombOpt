@@ -318,6 +318,7 @@ def main(cfg: DictConfig):
     avg_intersections = []
     max_intersections = []
     intersections = []
+    avg_metric = []
 
     for ep in range(cfg.epochs):
         for batch_idx, gbatch in enumerate(train_loader):
@@ -369,6 +370,7 @@ def main(cfg: DictConfig):
                       + f"metric size={np.mean(train_metric_ls):.2f}+-{np.std(train_metric_ls):.2f}, "
                       + f"LogR scaled={train_logr_scaled:.2e} traj_len={train_traj_len:.2f}, "
                       + f"avg reg ratio={np.mean(reg_ratio):.2f}")
+                avg_metric.append(np.mean(train_metric_ls))
 
             train_step += 1
 
@@ -407,9 +409,18 @@ def main(cfg: DictConfig):
             plt.savefig(f"{path}/plots/{ep}_intersection.png")
             plt.close()
 
+            # Metric plot
+            plt.plot(avg_metric, label='Metric')
+            plt.xlabel('Train Step')
+            plt.ylabel('Metric')
+            plt.legend()
+            plt.savefig(f"{path}/plots/{ep}_metric.png")
+            plt.close()
+
         # Save metrics each epoch
         np.array(reg_ratio).dump(f"{path}/metrics/reg_ratio.npy")
         np.array(intersections).reshape(cfg.epochs, -1).dump(f"{path}/metrics/intersections.npy")
+        np.array(avg_metric).dump(f"{path}/metrics/avg_metric.npy")
 
     evaluate(cfg.epochs, train_step, train_data_used, logr_scaler)
     alg.save(alg_save_path)
