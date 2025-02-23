@@ -301,6 +301,17 @@ class MaxCutMDP(GraphCombOptMDP):
     def batch_metric(self, vec_state):
         return self.get_log_reward(vec_state).tolist()
 
+    def compute_maxcut(self, state, dgl_g):
+        state = state.clone()
+        state[state == 2] = 0  # Ensure binary states (0 or 1)
+
+        with dgl_g.local_scope():
+            dgl_g.ndata["h"] = state.float()
+            dgl_g.apply_edges(fn.u_add_v("h", "h", "e"))
+            dgl_g.edata["e"] = (dgl_g.edata["e"] == 1).float()
+            cut = dgl.sum_edges(dgl_g, 'e')  # Compute total cut value
+
+        return (cut / 2).item()
 
 ######### Replay Buffer Utils
 

@@ -199,6 +199,12 @@ def sample(cfg: DictConfig):
                         pf_logits, pf_undone = alg.compute_logits(g_batch, state, done)
                         logits.append(pf_logits.to("cpu"))
                     
+                    # Compute and save reward
+                    if cfg.task == "MaxCut":
+                        reward = env.compute_maxcut(state, dgl_g)
+                        np.save(f'/content/GFlowNet-CombOpt/logits/{state_dir}/{batch_idx}_{graph}_reward', 
+                                reward.to("cpu"))
+                    
                     np.save(f'/content/GFlowNet-CombOpt/logits/{state_dir}/{batch_idx}_{graph}', logits)
 
         return
