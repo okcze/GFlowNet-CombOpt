@@ -203,7 +203,7 @@ def sample(cfg: DictConfig):
                     if cfg.task == "MaxCut":
                         reward = env.compute_maxcut(state, dgl_g)
                         np.save(f'/content/GFlowNet-CombOpt/logits/{state_dir}/{batch_idx}_{graph}_reward', 
-                                reward.to("cpu"))
+                                reward)
                     
                     np.save(f'/content/GFlowNet-CombOpt/logits/{state_dir}/{batch_idx}_{graph}', logits)
 
