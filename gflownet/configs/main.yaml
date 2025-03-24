@@ -12,6 +12,7 @@ plot_loss: true
 plot_freq: 1
 eval_reg: true
 reg_ratio_freq: 30
+fixed_steps: 0
 
 task: mis
 input: rb200-300
