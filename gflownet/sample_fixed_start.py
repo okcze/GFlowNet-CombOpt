@@ -197,6 +197,7 @@ def sample(cfg: DictConfig):
 
                 if step < cfg.fixed_steps:
                     alg_out = ref_alg.sample(gbatch_rep, state, env.done, rand_prob=0.)
+                    step += 1
                 else:
                     alg_out = alg.sample(gbatch_rep, state, env.done, rand_prob=0.)
                 
