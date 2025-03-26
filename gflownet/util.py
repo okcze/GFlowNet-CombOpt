@@ -402,6 +402,7 @@ def get_reference_alg(cfg):
     from .ref_alg.mis_local_improvement import MISLocalImprovement
     from .ref_alg.mds_greedy import MDSGreedy
     from .ref_alg.maxcut_greedy import MaxCutGreedy
+    from .ref_alg.mis_greedy_features import MISGreedyFeatures
 
     if cfg.ref_alg == "mis_greedy":
         return MISGreedy()
@@ -413,6 +414,8 @@ def get_reference_alg(cfg):
         return MDSGreedy()
     elif cfg.ref_alg == "maxcut_greedy":
         return MaxCutGreedy()
+    elif cfg.ref_alg == "mis_greedy_features":
+        return MISGreedyFeatures()
     else:
         raise NotImplementedError
 
