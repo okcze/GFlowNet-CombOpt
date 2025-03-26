@@ -221,6 +221,7 @@ def sample(cfg: DictConfig):
                     else:
                         graph_data = np.append(graph_data, np.array([states[i][graph]]), axis=0)
                 np.save(f'/content/GFlowNet-CombOpt/states/{alg_name}/{ep}/{batch_idx}_{graph}', graph_data)
+            for graph in range(len(nodes_features)):
                 np.save(f'/content/GFlowNet-CombOpt/states/{alg_name}/{ep}/{batch_idx}_{graph}_features', nodes_features[graph])
             
             logr_rep = logr_scaler(env.get_log_reward())
