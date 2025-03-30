@@ -49,8 +49,9 @@ class MISGreedyFeatures:
 
             ### Get top 5 nodes with minimum degree among undecided nodes
             min_degree_nodes = torch.argsort(degrees)[:5]
+            min_degree_values = degrees[min_degree_nodes].tolist()
             if not done[i]:
-                nodes_features[i] = min_degree_nodes
+                nodes_features[i] = [min_degree_nodes, min_degree_values]
             
             # Update the combined output tensor at the correct global index
             combined_output[start_idx + min_degree_node] = 1
