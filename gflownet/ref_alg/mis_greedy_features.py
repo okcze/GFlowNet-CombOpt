@@ -13,7 +13,7 @@ class MISGreedyFeatures:
         actions = torch.full((gbatch_rep.batch_size,), -1, dtype=torch.long, device=device)
 
         # Top 5 nodes with minimum degree among undecided nodes
-        nodes_features = torch.full((gbatch_rep.batch_size, 5), -1, device=device)
+        nodes_features = torch.full((gbatch_rep.batch_size, 2, 5), -1, device=device)
 
         # Get number of nodes per graph and compute cumulative offsets
         batch_num_nodes = gbatch_rep.batch_num_nodes().tolist()
@@ -49,9 +49,10 @@ class MISGreedyFeatures:
 
             ### Get top 5 nodes with minimum degree among undecided nodes
             min_degree_nodes = torch.argsort(degrees)[:5]
-            min_degree_values = degrees[min_degree_nodes].tolist()
+            min_degree_values = degrees[min_degree_nodes]
             if not done[i]:
-                nodes_features[i] = [min_degree_nodes, min_degree_values]
+                nodes_features[i, 0] = min_degree_nodes
+                nodes_features[i, 1] = min_degree_values
             
             # Update the combined output tensor at the correct global index
             combined_output[start_idx + min_degree_node] = 1
