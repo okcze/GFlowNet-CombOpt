@@ -8,20 +8,16 @@ class MDSGreedy:
 
     @torch.no_grad()
     def sample(self, gbatch_rep, state, done, rand_prob=0., reward_exp=1.0):
-        device = state.device  # Ensure tensors are on the same device
+        device = state.device
 
-        # Number of nodes per graph and cumulative offsets
         batch_num_nodes = gbatch_rep.batch_num_nodes().tolist()
         cumulative_nodes = [0] + torch.cumsum(torch.tensor(batch_num_nodes, device=device), dim=0).tolist()
 
-        # Initialize actions and logits
         actions = torch.full((len(batch_num_nodes),), -1, dtype=torch.long, device=device)
         combined_output = torch.full((gbatch_rep.num_nodes(),), -1, device=device)
 
-        # Extract decided mask from state
         decided_mask = get_decided(state)
 
-        # Create a mask for uncovered nodes
         uncovered_mask = ~decided_mask
 
         # Compute coverage for all nodes in the batch
@@ -35,7 +31,6 @@ class MDSGreedy:
         coverage = gbatch_rep.ndata['coverage']
         coverage[~uncovered_mask] = -1  # Exclude already decided nodes
 
-        # Select the best node for each graph
         for i, num_nodes in enumerate(batch_num_nodes):
             
             # Get the range of nodes belonging to the i-th graph
@@ -56,10 +51,8 @@ class MDSGreedy:
 
             best_node_local = torch.argmax(graph_coverage).item()
 
-            # Map local node index to global index
             best_node_global = start_idx + best_node_local
 
-            # Record the selected node and update logits
             combined_output[best_node_global] = 1
 
             if not done[i]:
