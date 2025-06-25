@@ -7,8 +7,8 @@ import torch.nn.functional as F
 import dgl
 from einops import rearrange, reduce, repeat
 
-from util import get_decided, pad_batch, get_parent
-from network import GIN
+from .util import get_decided, pad_batch, get_parent, get_reference_alg, normalize_tuple
+from .network import GIN
 
 
 def sample_from_logits(pf_logits, gb, state, done, rand_prob=0.):
@@ -20,7 +20,7 @@ def sample_from_logits(pf_logits, gb, state, done, rand_prob=0.):
     action = torch.full([gb.batch_size,], -1, dtype=torch.long, device=gb.device)
     pf_undone = pf_logits[~done].softmax(dim=1)
     action[~done] = torch.multinomial(pf_undone, num_samples=1).squeeze(-1)
-
+    
     if rand_prob > 0.:
         unif_pf_undone = torch.isfinite(pf_logits[~done]).float()
         rand_action_unodone = torch.multinomial(unif_pf_undone, num_samples=1).squeeze(-1)
@@ -75,7 +75,21 @@ class DetailedBalance(object):
 
     def train_step(self, *batch):
         raise NotImplementedError
+    
+    @torch.no_grad()
+    def compute_logits(self, gb, state, done, reward_exp=None):
+        """Compute logits for all actions to calculate likelihoods."""
+        self.model.eval()
+        pf_logits = self.model(gb, state, reward_exp)[..., 0]
+        numnode_per_graph = gb.batch_num_nodes().tolist()
+        pf_logits[get_decided(state)] = -np.inf
+        pf_logits = pad_batch(pf_logits, numnode_per_graph, padding_value=-np.inf)
 
+        # use -1 to denote impossible action (e.g. for done graphs)
+        # action = torch.full([gb.batch_size,], -1, dtype=torch.long, device=gb.device)
+        # pf_undone = pf_logits[~done].softmax(dim=0)
+        pf_undone = pf_logits[~done]
+        return pf_logits, pf_undone
 
 class DetailedBalanceTransitionBuffer(DetailedBalance):
     def __init__(self, cfg, device):

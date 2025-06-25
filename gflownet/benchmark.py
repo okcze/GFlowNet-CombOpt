@@ -13,7 +13,7 @@ from einops import rearrange, reduce, repeat
 
 from .data import get_data_loaders
 from .util import seed_torch, TransitionBuffer, get_mdp_class
-from .algorithm import DetailedBalanceTransitionBuffer
+from .algorithm import RegularizedDetailedBalanceTransitionBuffer, DetailedBalanceTransitionBuffer
 
 torch.backends.cudnn.benchmark = True
 
@@ -21,14 +21,17 @@ torch.backends.cudnn.benchmark = True
 def get_alg_buffer(cfg, device):
     assert cfg.alg in ["db", "fl"]
     buffer = TransitionBuffer(cfg.tranbuff_size, cfg)
-    alg = DetailedBalanceTransitionBuffer(cfg, device)
+    if len(cfg.ref_alg) > 0:
+        alg = RegularizedDetailedBalanceTransitionBuffer(cfg, device)
+    else:
+        alg = DetailedBalanceTransitionBuffer(cfg, device)
     return alg, buffer
 
 def get_saved_alg_buffer(cfg, device, alg_load_path):
     """Allow to load model from file."""
     assert cfg.alg in ["db", "fl"]
     buffer = TransitionBuffer(cfg.tranbuff_size, cfg)
-    alg = DetailedBalanceTransitionBuffer(cfg, device)
+    alg = RegularizedDetailedBalanceTransitionBuffer(cfg, device)
     alg.load(alg_load_path)
     return alg, buffer
 
@@ -204,8 +207,14 @@ def main(cfg: DictConfig):
         result["train_data_used"][ep] = train_data_used
         pickle.dump(result, gzip.open("./result.json", 'wb'))
 
-    for ep in range(cfg.epochs):
+    t0 = time()
+    for ep in range(1):
+        # for batch_idx, gbatch in enumerate(train_loader):
+        # Take only the first batch for now
         for batch_idx, gbatch in enumerate(train_loader):
+            if batch_idx > 10:
+                break
+            print(f"Batch {batch_idx}")
             reward_exp = None
             process_ratio = max(0., min(1., train_data_used / cfg.annend))
             logr_scaler = get_logr_scaler(cfg, process_ratio=process_ratio, reward_exp=reward_exp)
@@ -260,8 +269,12 @@ def main(cfg: DictConfig):
                 if cfg.eval:
                     evaluate(ep, train_step, train_data_used, logr_scaler)
 
-    evaluate(cfg.epochs, train_step, train_data_used, logr_scaler)
-    alg.save(alg_save_path)
+    total_time = time() - t0
+    print(f"Total time: {total_time:.2f} s")
+    print(f"AVG time per step: {total_time / train_step:.2f} s")
+
+    # evaluate(cfg.epochs, train_step, train_data_used, logr_scaler)
+    # alg.save(alg_save_path)
 
 if __name__ == "__main__":
     main()

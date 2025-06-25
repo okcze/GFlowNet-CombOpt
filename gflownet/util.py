@@ -40,6 +40,16 @@ def ema_update(model, ema_model, alpha=0.999):
     for param, ema_param in zip(model.parameters(), ema_model.parameters()):
         ema_param.data.mul_(alpha).add_(param.data, alpha=1 - alpha)
 
+def normalize_tuple(tup1, tup2):
+    # Shift both tuples so that the minimum value in each tensor is 0
+    tup1 = tuple(t1 - t1.min() for t1 in tup1)
+    tup2 = tuple(t2 - t2.min() for t2 in tup2)
+    
+    # Rescale tup2 tensors to match the range of tup1 tensors
+    tup2 = tuple(t2 * (t1.max() / t2.max()) for t1, t2 in zip(tup1, tup2))
+    
+    return tup1, tup2
+
 ######### MDP Utils
 
 def get_decided(state, task="MaxIndependentSet") -> torch.bool:
@@ -291,6 +301,17 @@ class MaxCutMDP(GraphCombOptMDP):
     def batch_metric(self, vec_state):
         return self.get_log_reward(vec_state).tolist()
 
+    def compute_maxcut(self, state, dgl_g):
+        state = state.clone()
+        state[state == 2] = 0  # Ensure binary states (0 or 1)
+
+        with dgl_g.local_scope():
+            dgl_g.ndata["h"] = state.float()
+            dgl_g.apply_edges(fn.u_add_v("h", "h", "e"))
+            dgl_g.edata["e"] = (dgl_g.edata["e"] == 1).float()
+            cut = dgl.sum_edges(dgl_g, 'e')  # Compute total cut value
+
+        return (cut / 2).item()
 
 ######### Replay Buffer Utils
 
@@ -372,3 +393,37 @@ class TransitionBuffer(object):
 
     def __len__(self):
         return len(self.buffer)
+    
+######### Reference Algorithms Utils
+
+def get_reference_alg(cfg):
+    from .ref_alg.mis_greedy import MISGreedy
+    from .ref_alg.mis_heuristic import MISHeuristic
+    from .ref_alg.mis_local_improvement import MISLocalImprovement
+    from .ref_alg.mds_greedy import MDSGreedy
+    from .ref_alg.maxcut_greedy import MaxCutGreedy
+    from .ref_alg.mis_greedy_features import MISGreedyFeatures
+
+    if cfg.ref_alg == "mis_greedy":
+        return MISGreedy()
+    elif cfg.ref_alg == "mis_heuristic":
+        return MISHeuristic()
+    elif cfg.ref_alg == "mis_local_improvement":
+        return MISLocalImprovement()
+    elif cfg.ref_alg == "mds_greedy":
+        return MDSGreedy()
+    elif cfg.ref_alg == "maxcut_greedy":
+        return MaxCutGreedy()
+    elif cfg.ref_alg == "mis_greedy_features":
+        return MISGreedyFeatures()
+    else:
+        raise NotImplementedError
+
+def manage_metrics_dir(path):
+    if not os.path.exists(path):
+        os.makedirs(f"{path}/metrics")
+        os.makedirs(f"{path}/plots")
+    elif os.path.exists(path):
+        import shutil
+        shutil.rmtree(f"{path}/metrics")
+        shutil.rmtree(f"{path}/plots")

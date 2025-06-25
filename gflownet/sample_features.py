@@ -12,7 +12,7 @@ import dgl
 from einops import rearrange, reduce, repeat
 
 from .data import get_data_loaders
-from .util import seed_torch, TransitionBuffer, get_mdp_class
+from .util import seed_torch, TransitionBuffer, get_mdp_class, get_reference_alg
 from .algorithm import DetailedBalanceTransitionBuffer
 
 torch.backends.cudnn.benchmark = True
@@ -24,12 +24,12 @@ def get_alg_buffer(cfg, device):
     alg = DetailedBalanceTransitionBuffer(cfg, device)
     return alg, buffer
 
-def get_saved_alg_buffer(cfg, device, alg_load_path):
+def get_saved_alg_buffer(cfg, device):
     """Allow to load model from file."""
     assert cfg.alg in ["db", "fl"]
     buffer = TransitionBuffer(cfg.tranbuff_size, cfg)
     alg = DetailedBalanceTransitionBuffer(cfg, device)
-    alg.load(alg_load_path)
+    alg.load(cfg.alg_load_path)
     return alg, buffer
 
 def get_logr_scaler(cfg, process_ratio=1., reward_exp=None):
@@ -146,45 +146,90 @@ def rollout(gbatch, cfg, alg):
 
 @hydra.main(config_path="configs", config_name="main") # for hydra-core==1.1.0
 # @hydra.main(version_base=None, config_path="configs", config_name="main") # for newer hydra
-def main(cfg: DictConfig):
+def sample(cfg: DictConfig):
+
     cfg = refine_cfg(cfg)
     device = torch.device(f"cuda:{cfg.device:d}" if torch.cuda.is_available() and cfg.device>=0 else "cpu")
     print(f"Device: {device}")
-    alg, buffer = get_alg_buffer(cfg, device)
+    
+    ### Allow usage of reference algorithms
+    if cfg.ref_alg == "":
+        raise NotImplementedError("Please specify the reference algorithm.")
+    else:
+        alg, _ = get_saved_alg_buffer(cfg, device)
+        alg_name = cfg.alg_load_path.split(".")[0].split("/")[-1]
+        ref_alg = get_reference_alg(cfg)
+            
     seed_torch(cfg.seed)
     print(str(cfg))
     print(f"Work directory: {os.getcwd()}")
+    print(f"Algorithm: {alg.__class__.__name__}")
 
-    train_loader, test_loader = get_data_loaders(cfg)
-    trainset_size = len(train_loader.dataset)
-    print(f"Trainset size: {trainset_size}")
-    alg_save_path = os.path.abspath("./alg.pt")
-    alg_save_path_best = os.path.abspath("./alg_best.pt")
-    train_data_used = 0
-    train_step = 0
-    train_logr_scaled_ls = []
-    train_metric_ls = []
-    metric_best = 0.
-    result = {"set_size": {}, "logr_scaled": {}, "train_data_used": {}, "train_step": {}, }
-
+    _, test_loader = get_data_loaders(cfg)
+    
     @torch.no_grad()
-    def evaluate(ep, train_step, train_data_used, logr_scaler):
+    def evaluate(ep, logr_scaler):
+
+        if not os.path.exists(f'/content/GFlowNet-CombOpt/states/{alg_name}/{ep}'):
+            os.makedirs(f'/content/GFlowNet-CombOpt/states/{alg_name}/{ep}')
+        
         torch.cuda.empty_cache()
-        num_repeat = 20
+        num_repeat = 1
         mis_ls, mis_top20_ls = [], []
         logr_ls = []
-        pbar = tqdm(enumerate(test_loader))
-        pbar.set_description(f"Test Epoch {ep:2d} Data used {train_data_used:5d}")
+        pbar = tqdm(enumerate(test_loader))        
+                
         for batch_idx, gbatch in pbar:
+
             gbatch = gbatch.to(device)
             gbatch_rep = dgl.batch([gbatch] * num_repeat)
 
             env = get_mdp_class(cfg.task)(gbatch_rep, cfg)
             state = env.state
-            while not all(env.done):
-                action = alg.sample(gbatch_rep, state, env.done, rand_prob=0.)
-                state = env.step(action)
+            actions = []
+            states = []
 
+            # Features of reference algorithm
+            nodes_features = []
+
+            state_per_graph = torch.split(state, env.numnode_per_graph, dim=0)
+            state_per_graph = [state.cpu().numpy() for state in state_per_graph]
+            states.append(state_per_graph)
+
+            while not all(env.done):
+                
+                alg_out = alg.sample(gbatch_rep, state, env.done, rand_prob=0.)
+                ref_alg_out = ref_alg.sample(gbatch_rep, state, env.done, rand_prob=0.)
+                
+                if len(alg_out) == 2:
+                    action, _ = alg_out
+                else:
+                    action = alg_out
+
+                actions.append(action.cpu().numpy())
+                nodes_features.append(ref_alg_out[2].cpu().numpy())
+                state = env.step(action)
+                state_per_graph = torch.split(state, env.numnode_per_graph, dim=0)
+                state_per_graph = [state.cpu().numpy() for state in state_per_graph]
+                states.append(state_per_graph)
+
+            for graph in range(len(state_per_graph)):
+                graph_data = np.array([[]])
+                for i in range(len(states)):
+                    if i==0:
+                        graph_data = np.array([states[i][graph]])
+                    else:
+                        graph_data = np.append(graph_data, np.array([states[i][graph]]), axis=0)
+                np.save(f'/content/GFlowNet-CombOpt/states/{alg_name}/{ep}/{batch_idx}_{graph}', graph_data)
+            for graph in range(len(state_per_graph)):
+                graph_data = np.array([[]])
+                for i in range(len(nodes_features)):
+                    if i==0:
+                        graph_data = np.array(nodes_features[i][graph])
+                    else:
+                        graph_data = np.append(graph_data, np.array(nodes_features[i][graph]), axis=0)
+                np.save(f'/content/GFlowNet-CombOpt/states/{alg_name}/{ep}/{batch_idx}_{graph}_features', graph_data)
+            
             logr_rep = logr_scaler(env.get_log_reward())
             logr_ls += logr_rep.tolist()
             curr_mis_rep = torch.tensor(env.batch_metric(state))
@@ -193,75 +238,19 @@ def main(cfg: DictConfig):
             mis_top20_ls += curr_mis_rep.max(dim=1)[0].tolist()
             pbar.set_postfix({"Metric": f"{np.mean(mis_ls):.2f}+-{np.std(mis_ls):.2f}"})
 
-        print(f"Test Epoch{ep:2d} Data used{train_data_used:5d}: "
+        print(f"Test Epoch{ep:2d}: "
               f"Metric={np.mean(mis_ls):.2f}+-{np.std(mis_ls):.2f}, "
               f"top20={np.mean(mis_top20_ls):.2f}, "
               f"LogR scaled={np.mean(logr_ls):.2e}+-{np.std(logr_ls):.2e}")
 
-        result["set_size"][ep] = np.mean(mis_ls)
-        result["logr_scaled"][ep] = np.mean(logr_ls)
-        result["train_step"][ep] = train_step
-        result["train_data_used"][ep] = train_data_used
-        pickle.dump(result, gzip.open("./result.json", 'wb'))
+        return states, actions
 
+    ##### sample
     for ep in range(cfg.epochs):
-        for batch_idx, gbatch in enumerate(train_loader):
-            reward_exp = None
-            process_ratio = max(0., min(1., train_data_used / cfg.annend))
-            logr_scaler = get_logr_scaler(cfg, process_ratio=process_ratio, reward_exp=reward_exp)
-
-            train_logr_scaled_ls = train_logr_scaled_ls[-5000:]
-            train_metric_ls = train_metric_ls[-5000:]
-            gbatch = gbatch.to(device)
-            if cfg.same_graph_across_batch:
-                gbatch = dgl.batch([gbatch] * cfg.batch_size_interact)
-            train_data_used += gbatch.batch_size
-
-            ###### rollout
-            batch, metric_ls = rollout(gbatch, cfg, alg)
-            buffer.add_batch(batch)
-
-            logr = logr_scaler(batch[-2][:, -1])
-            train_logr_scaled_ls += logr.tolist()
-            train_logr_scaled = logr.mean().item()
-            train_metric_ls += metric_ls
-            train_traj_len = batch[-1].float().mean().item()
-
-            ##### train
-            batch_size = min(len(buffer), cfg.batch_size)
-            indices = list(range(len(buffer)))
-            for _ in range(cfg.tstep):
-                if len(indices) == 0:
-                    break
-                curr_indices = random.sample(indices, min(len(indices), batch_size))
-                batch = buffer.sample_from_indices(curr_indices)
-                train_info = alg.train_step(*batch, reward_exp=reward_exp, logr_scaler=logr_scaler)
-                indices = [i for i in indices if i not in curr_indices]
-
-            if cfg.onpolicy:
-                buffer.reset()
-
-            if train_step % cfg.print_freq == 0:
-                print(f"Epoch {ep:2d} Data used {train_data_used:.3e}: loss={train_info['train/loss']:.2e}, "
-                      + (f"LogZ={train_info['train/logZ']:.2e}, " if cfg.alg in ["tb", "tbbw"] else "")
-                      + f"metric size={np.mean(train_metric_ls):.2f}+-{np.std(train_metric_ls):.2f}, "
-                      + f"LogR scaled={train_logr_scaled:.2e} traj_len={train_traj_len:.2f}")
-
-            train_step += 1
-
-            ##### eval
-            if batch_idx == 0 or train_step % cfg.eval_freq == 0:
-                alg.save(alg_save_path)
-                metric_curr = np.mean(train_metric_ls[-1000:])
-                if metric_curr > metric_best:
-                    metric_best = metric_curr
-                    print(f"best metric: {metric_best:.2f} at step {train_data_used:.3e}")
-                    alg.save(alg_save_path_best)
-                if cfg.eval:
-                    evaluate(ep, train_step, train_data_used, logr_scaler)
-
-    evaluate(cfg.epochs, train_step, train_data_used, logr_scaler)
-    alg.save(alg_save_path)
+        process_ratio = 1
+        reward_exp = None
+        logr_scaler = get_logr_scaler(cfg, process_ratio=process_ratio, reward_exp=reward_exp)
+        states, actions = evaluate(ep, logr_scaler)
 
 if __name__ == "__main__":
-    main()
+    sample()

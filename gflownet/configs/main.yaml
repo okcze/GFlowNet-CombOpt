@@ -1,6 +1,19 @@
 defaults:
   - override hydra/launcher: submitit_slurm
 
+# Output directory
+run_name: default_run
+
+# Reference algorithms
+ref_alg: ""
+frac_replaced: 0
+reward_boost: 1
+plot_loss: true
+plot_freq: 1
+eval_reg: true
+reg_ratio_freq: 30
+fixed_steps: 0
+
 task: mis
 input: rb200-300
 wandb: 0
@@ -10,6 +23,7 @@ print_freq: 3
 wandb_freq: null
 eval: false
 eval_freq: 200
+alg_load_path: ''
 
 # for GIN
 arch: gin
@@ -48,7 +62,7 @@ rexpit: 1
 
 hydra:
   run:
-    dir: ./outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}
+    dir: ./outputs/${run_name}
   sweep:
     dir: ${oc.env:HOME}/scratch/${now:%Y.%m.%d}/${now:%H.%M.%S}
     subdir: ${hydra.job.override_dirname}
