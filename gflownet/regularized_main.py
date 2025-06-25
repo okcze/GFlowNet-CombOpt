@@ -1,3 +1,11 @@
+# Main training script for regularized GFN with heuristic algorithms guidance
+# Parameters:
+# - task
+# - ref_alg
+# - frac_replaced
+# - reward_boost
+# - epochs
+
 import sys, os
 import gzip, pickle
 from time import time, sleep

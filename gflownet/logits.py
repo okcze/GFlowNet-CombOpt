@@ -1,3 +1,9 @@
+# Script for computing logits of sampling policy on test trajectories
+# Parameters:
+# - task
+# - epochs=1
+# - alg_load_path: path to the trained model
+
 import sys, os
 import gzip, pickle
 from time import time, sleep

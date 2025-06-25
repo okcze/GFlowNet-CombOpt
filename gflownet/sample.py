@@ -1,3 +1,11 @@
+# Script for inference (sampling) from trained GFN
+# Extended to enable sampling from heuristic algorithms in the same manner as GFN
+# Parameters:
+# - task
+# - ref_alg: name of the heuristic algorithm to sample from
+# - epochs=1
+# - alg_load_path: path to the trained model
+
 import sys, os
 import gzip, pickle
 from time import time, sleep
