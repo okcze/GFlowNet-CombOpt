@@ -48,7 +48,7 @@ class MISGreedyFeatures:
             min_degree_node = torch.argmin(degrees).item()
 
             ### Get top 5 nodes with minimum degree among undecided nodes
-            min_degree_nodes = torch.argsort(degrees)[:5]
+            min_degree_nodes = torch.argsort(degrees)
             min_degree_values = degrees[min_degree_nodes]
             if not done[i]:
                 nodes_features[i, 0] = min_degree_nodes
