@@ -12,11 +12,13 @@ class MISGreedyFeatures:
         # Initialize actions with -1 to denote impossible actions for done graphs
         actions = torch.full((gbatch_rep.batch_size,), -1, dtype=torch.long, device=device)
 
-        # Top 5 nodes with minimum degree among undecided nodes
-        nodes_features = torch.full((gbatch_rep.batch_size, 2, 5), -1, device=device)
-
         # Get number of nodes per graph and compute cumulative offsets
         batch_num_nodes = gbatch_rep.batch_num_nodes().tolist()
+        max_nodes = max(batch_num_nodes)
+        
+        # Initialize nodes_features with maximum number of nodes to accommodate all graphs
+        nodes_features = torch.full((gbatch_rep.batch_size, 2, max_nodes), -1, device=device)
+
         cumulative_nodes = [0] + torch.cumsum(torch.tensor(batch_num_nodes), dim=0).tolist()
 
         # Split state into individual graph states for local processing
@@ -47,12 +49,15 @@ class MISGreedyFeatures:
             # Get the node with the minimum degree among undecided nodes
             min_degree_node = torch.argmin(degrees).item()
 
-            ### Get top 5 nodes with minimum degree among undecided nodes
+            # Get all nodes sorted by degree (minimum first)
             min_degree_nodes = torch.argsort(degrees)
             min_degree_values = degrees[min_degree_nodes]
+            
             if not done[i]:
-                nodes_features[i, 0] = min_degree_nodes
-                nodes_features[i, 1] = min_degree_values
+                # Store all nodes for this graph (up to max_nodes)
+                nodes_features[i, 0, :num_nodes] = min_degree_nodes
+                nodes_features[i, 1, :num_nodes] = min_degree_values
+                # The remaining positions (num_nodes to max_nodes) remain -1 due to initialization
             
             # Update the combined output tensor at the correct global index
             combined_output[start_idx + min_degree_node] = 1
