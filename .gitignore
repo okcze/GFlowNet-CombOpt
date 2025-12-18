@@ -17,7 +17,6 @@ results/
 *.npy
 *.pkl
 *.ipynb_checkpoints
-.ipynb
 *.pdf
 *.png
 *.whl
